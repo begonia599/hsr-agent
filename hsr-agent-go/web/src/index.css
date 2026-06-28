@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+    --background: oklch(0.975 0.008 80);
+    --foreground: oklch(0.20 0.02 50);
+    --card: oklch(0.985 0.006 80);
+    --card-foreground: oklch(0.20 0.02 50);
+    --popover: oklch(0.985 0.006 80);
+    --popover-foreground: oklch(0.20 0.02 50);
+    --primary: oklch(0.28 0.02 50);
+    --primary-foreground: oklch(0.975 0.008 80);
+    --secondary: oklch(0.945 0.01 80);
+    --secondary-foreground: oklch(0.28 0.02 50);
+    --muted: oklch(0.945 0.01 80);
+    --muted-foreground: oklch(0.52 0.015 50);
+    --accent: oklch(0.925 0.012 80);
+    --accent-foreground: oklch(0.28 0.02 50);
+    --destructive: oklch(0.58 0.22 27);
+    --border: oklch(0.90 0.01 80);
+    --input: oklch(0.90 0.01 80);
+    --ring: oklch(0.65 0.02 50);
+    --radius: 0.625rem;
+}
+
+.dark {
+    --background: oklch(0.17 0.015 60);
+    --foreground: oklch(0.92 0.008 80);
+    --card: oklch(0.21 0.015 60);
+    --card-foreground: oklch(0.92 0.008 80);
+    --popover: oklch(0.21 0.015 60);
+    --popover-foreground: oklch(0.92 0.008 80);
+    --primary: oklch(0.88 0.008 80);
+    --primary-foreground: oklch(0.17 0.015 60);
+    --secondary: oklch(0.25 0.015 60);
+    --secondary-foreground: oklch(0.92 0.008 80);
+    --muted: oklch(0.25 0.015 60);
+    --muted-foreground: oklch(0.65 0.008 80);
+    --accent: oklch(0.30 0.015 60);
+    --accent-foreground: oklch(0.92 0.008 80);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+    --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --font-serif: 'Source Serif 4', 'Georgia', 'Noto Serif SC', serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+* {
+    border-color: var(--border);
+}
+
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* 滚动条克制处理 */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+/* 助手 markdown 渲染样式(轻量,替代 typography 插件) */
+.prose-hsr {
+    line-height: 1.65;
+}
+.prose-hsr > :first-child {
+    margin-top: 0;
+}
+.prose-hsr > :last-child {
+    margin-bottom: 0;
+}
+.prose-hsr h1,
+.prose-hsr h2,
+.prose-hsr h3 {
+    font-weight: 600;
+    margin: 1.1em 0 0.5em;
+    line-height: 1.3;
+}
+.prose-hsr h1 { font-size: 1.25rem; }
+.prose-hsr h2 { font-size: 1.1rem; }
+.prose-hsr h3 { font-size: 1rem; }
+.prose-hsr p { margin: 0.6em 0; }
+.prose-hsr ul,
+.prose-hsr ol {
+    margin: 0.6em 0;
+    padding-left: 1.3em;
+}
+.prose-hsr li { margin: 0.25em 0; }
+.prose-hsr ul { list-style: disc; }
+.prose-hsr ol { list-style: decimal; }
+.prose-hsr code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--muted);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-sm);
+}
+.prose-hsr pre {
+    background: var(--muted);
+    padding: 0.75em 1em;
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    margin: 0.7em 0;
+}
+.prose-hsr pre code {
+    background: transparent;
+    padding: 0;
+}
+.prose-hsr strong { font-weight: 600; }
+.prose-hsr a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.prose-hsr table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.7em 0;
+    font-size: 0.92em;
+}
+.prose-hsr th,
+.prose-hsr td {
+    border: 1px solid var(--border);
+    padding: 0.4em 0.6em;
+    text-align: left;
+}
+.prose-hsr th {
+    background: var(--muted);
+    font-weight: 600;
+}
+.prose-hsr blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 0.9em;
+    margin: 0.7em 0;
+    color: var(--muted-foreground);
+}

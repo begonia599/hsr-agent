@@ -1,0 +1,25 @@
+# Secrets / env
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+
+# Node / frontend
+node_modules/
+dist/
+
+# Database volume
+pgdata/
+
+# Runtime logs
+logs/
+*.log
+
+# Data assets (大体积,可由 scrape 脚本重新生成;不纳入版本库)
+nanoka_hsr/
+enriched/

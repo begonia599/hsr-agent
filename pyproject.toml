@@ -1,0 +1,28 @@
+[project]
+name = "hsr-agent"
+version = "0.1.0"
+description = "Local Honkai: Star Rail team recommendation agent backed by nanoka data."
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.74.0",
+    "httpx>=0.28.0",
+    "pgvector>=0.4.0",
+    "psycopg[binary]>=3.2.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.14.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hsr_agent*", "schemas*"]
