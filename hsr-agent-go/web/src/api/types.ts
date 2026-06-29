@@ -109,6 +109,7 @@ export interface RelicSet {
   name_en: string
   set2_desc?: string
   set4_desc?: string
+  figure_url?: string
   axes: CharacterAxes
 }
 

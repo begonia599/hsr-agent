@@ -283,10 +283,8 @@ export function lightconeFigureUrl(id: number): string {
   return `${ASSET_BASE}/lightconemaxfigures/${id}.webp`
 }
 
-// 遗器套装立绘
-export function relicSetIconUrl(id: number): string {
-  return `${ASSET_BASE}/itemfigures/${id}.webp`
-}
+// 遗器套装立绘:按 raw_zh.icon 编号(71xxx)而非套装 id 取,故由后端 figure_url 提供,
+// 前端不再凭 id 拼接(用 id 会撞到无关物品图)。
 
 // 遗器类型:cavern=隧洞(4件套), planar=位面/界域(2件套)
 export const KIND_LABELS: Record<string, string> = {

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Section } from '@/components/character/detail/Section'
 import { RelicSetEffects } from '@/components/relic/RelicSetEffects'
-import { kindLabel, relicSetIconUrl, tagLabel } from '@/lib/hsr'
+import { kindLabel, tagLabel } from '@/lib/hsr'
 
 export function RelicSetDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -60,14 +60,16 @@ export function RelicSetDetailPage() {
             <CardContent>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <div className="mx-auto flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/50 sm:mx-0">
-                  <img
-                    src={relicSetIconUrl(set.id)}
-                    alt={set.name_zh}
-                    className="size-full object-contain"
-                    onError={(e) => {
-                      ;(e.target as HTMLImageElement).style.visibility = 'hidden'
-                    }}
-                  />
+                  {set.figure_url && (
+                    <img
+                      src={set.figure_url}
+                      alt={set.name_zh}
+                      className="size-full object-contain"
+                      onError={(e) => {
+                        ;(e.target as HTMLImageElement).style.visibility = 'hidden'
+                      }}
+                    />
+                  )}
                 </div>
                 <div className="flex flex-1 flex-col gap-2">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

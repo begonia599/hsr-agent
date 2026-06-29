@@ -92,14 +92,33 @@ type Lightcone struct {
 }
 
 type RelicSet struct {
-	ID       int             `json:"id"`
-	Version  string          `json:"version"`
-	Kind     string          `json:"kind"`
-	NameZH   string          `json:"name_zh"`
-	NameEN   string          `json:"name_en"`
-	Set2Desc string          `json:"set2_desc,omitempty"`
-	Set4Desc string          `json:"set4_desc,omitempty"`
-	Axes     json.RawMessage `json:"axes"`
+	ID        int             `json:"id"`
+	Version   string          `json:"version"`
+	Kind      string          `json:"kind"`
+	NameZH    string          `json:"name_zh"`
+	NameEN    string          `json:"name_en"`
+	Set2Desc  string          `json:"set2_desc,omitempty"`
+	Set4Desc  string          `json:"set4_desc,omitempty"`
+	FigureURL string          `json:"figure_url,omitempty"`
+	Axes      json.RawMessage `json:"axes"`
+}
+
+// relicFigureURL 从 relic_sets.raw_zh.icon(形如 SpriteOutput/ItemIcon/71001.png)
+// 解析出 icon 编号,拼成 /media/itemfigures/<icon>.webp。遗器套装图按 icon 编号(71xxx)
+// 而非套装 id 存放,故必须走这里 —— 用 set id 会撞到无关物品图或缺图。
+func relicFigureURL(icon string) string {
+	icon = strings.ReplaceAll(strings.TrimSpace(icon), "\\", "/")
+	if icon == "" {
+		return ""
+	}
+	base := icon[strings.LastIndex(icon, "/")+1:]
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		base = base[:i]
+	}
+	if base == "" {
+		return ""
+	}
+	return AssetURLPrefix + "/itemfigures/" + base + ".webp"
 }
 
 type AxisRow struct {
@@ -491,7 +510,7 @@ func (s *Service) ListRelicSets(ctx context.Context, query string, kind string, 
 		limit = 40
 	}
 	rows, err := s.db.Query(ctx, `
-SELECT id, version, kind, name_zh, name_en, coalesce(set2_desc, ''), coalesce(set4_desc, ''), axes
+SELECT id, version, kind, name_zh, name_en, coalesce(set2_desc, ''), coalesce(set4_desc, ''), coalesce(raw_zh->>'icon', ''), axes
 FROM relic_sets
 WHERE ($1 = '' OR id::text = $1 OR name_zh ILIKE '%' || $1 || '%' OR name_en ILIKE '%' || $1 || '%')
   AND ($2 = '' OR kind = $2)
@@ -508,9 +527,11 @@ LIMIT $3`, strings.TrimSpace(query), kind, limit)
 	var out []RelicSet
 	for rows.Next() {
 		var item RelicSet
-		if err := rows.Scan(&item.ID, &item.Version, &item.Kind, &item.NameZH, &item.NameEN, &item.Set2Desc, &item.Set4Desc, &item.Axes); err != nil {
+		var icon string
+		if err := rows.Scan(&item.ID, &item.Version, &item.Kind, &item.NameZH, &item.NameEN, &item.Set2Desc, &item.Set4Desc, &icon, &item.Axes); err != nil {
 			return nil, err
 		}
+		item.FigureURL = relicFigureURL(icon)
 		out = append(out, item)
 	}
 	return out, rows.Err()
@@ -518,13 +539,15 @@ LIMIT $3`, strings.TrimSpace(query), kind, limit)
 
 func (s *Service) GetRelicSet(ctx context.Context, id int) (*RelicSet, error) {
 	var item RelicSet
+	var icon string
 	err := s.db.QueryRow(ctx, `
-SELECT id, version, kind, name_zh, name_en, coalesce(set2_desc, ''), coalesce(set4_desc, ''), axes
+SELECT id, version, kind, name_zh, name_en, coalesce(set2_desc, ''), coalesce(set4_desc, ''), coalesce(raw_zh->>'icon', ''), axes
 FROM relic_sets
-WHERE id = $1`, id).Scan(&item.ID, &item.Version, &item.Kind, &item.NameZH, &item.NameEN, &item.Set2Desc, &item.Set4Desc, &item.Axes)
+WHERE id = $1`, id).Scan(&item.ID, &item.Version, &item.Kind, &item.NameZH, &item.NameEN, &item.Set2Desc, &item.Set4Desc, &icon, &item.Axes)
 	if err != nil {
 		return nil, err
 	}
+	item.FigureURL = relicFigureURL(icon)
 	return &item, nil
 }
 
