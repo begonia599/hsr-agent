@@ -258,8 +258,9 @@ export function rarityStars(rarity: number): string {
   return '★'.repeat(rarity)
 }
 
-// 资源 CDN 模板(与后端 asset_paths 一致;直接拼 URL 省一次请求)
-const ASSET_BASE = 'https://static.nanoka.cc/assets/hsr'
+// 资源走后端同源 /media 静态路由(由 ASSET_ROOT 本地目录伺服,避免跨境 CDN)。
+// 与后端 tools.AssetURLPrefix / serveMedia 一致;子路径沿用 nanoka 的 assets/hsr 布局。
+const ASSET_BASE = '/media'
 
 export function roundIconUrl(id: number): string {
   return `${ASSET_BASE}/avatarroundicon/${id}.webp`

@@ -134,7 +134,31 @@ type Asset struct {
 	Variant    string `json:"variant"`
 	LocalPath  string `json:"local_path"`
 	CDNURL     string `json:"cdn_url"`
+	LocalURL   string `json:"local_url,omitempty"`
 	Bytes      *int   `json:"bytes,omitempty"`
+}
+
+// AssetURLPrefix 是后端本地资源静态路由前缀。前端 ASSET_BASE 指向它即可同源
+// 加载图片,避免跨境 CDN。必须与 httpapi serveMedia 的路由前缀保持一致。
+const AssetURLPrefix = "/media"
+
+// LocalAssetURL 把 asset_paths.local_path(形如 nanoka_hsr/<ver>/assets/hsr/<sub>)
+// 映射成同源后端路径 /media/<sub>。找不到 assets/hsr 标记时返回空,调用方回退 cdn_url。
+func LocalAssetURL(localPath string) string {
+	if strings.TrimSpace(localPath) == "" {
+		return ""
+	}
+	p := strings.ReplaceAll(localPath, "\\", "/")
+	const marker = "/assets/hsr/"
+	idx := strings.Index(p, marker)
+	if idx < 0 {
+		return ""
+	}
+	sub := strings.TrimPrefix(p[idx+len(marker):], "/")
+	if sub == "" {
+		return ""
+	}
+	return AssetURLPrefix + "/" + sub
 }
 
 type Synergy struct {
@@ -191,16 +215,17 @@ type EntityResolveRequest struct {
 }
 
 type EntityResolveResult struct {
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	Found    bool    `json:"found"`
-	ID       *int    `json:"id,omitempty"`
-	NameZH   string  `json:"name_zh,omitempty"`
-	URL      string  `json:"url,omitempty"`
-	ImageURL string  `json:"image_url,omitempty"`
-	Markdown string  `json:"markdown,omitempty"`
-	Score    float64 `json:"score,omitempty"`
-	Reason   string  `json:"reason,omitempty"`
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	Found         bool    `json:"found"`
+	ID            *int    `json:"id,omitempty"`
+	NameZH        string  `json:"name_zh,omitempty"`
+	URL           string  `json:"url,omitempty"`
+	ImageURL      string  `json:"image_url,omitempty"`
+	LocalImageURL string  `json:"local_image_url,omitempty"`
+	Markdown      string  `json:"markdown,omitempty"`
+	Score         float64 `json:"score,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
 }
 
 func (s *Service) ListCharacters(ctx context.Context, query string, role string, element string, path string, rarity int, limit int) ([]Character, error) {
@@ -291,7 +316,7 @@ func (s *Service) resolveEntity(ctx context.Context, entity EntityResolveRequest
 	result.Markdown = fmt.Sprintf("[%s](%s)", nameZH, result.URL)
 	result.Score = score
 	if display == "image" || display == "both" {
-		result.ImageURL = s.resolveEntityImageURL(ctx, kind, id, imageVariant)
+		result.ImageURL, result.LocalImageURL = s.resolveEntityImageURL(ctx, kind, id, imageVariant)
 	}
 	return result, nil
 }
@@ -330,12 +355,12 @@ LIMIT 1`, "/relic-sets", "figure", true
 	}
 }
 
-func (s *Service) resolveEntityImageURL(ctx context.Context, kind string, id int, variant string) string {
+func (s *Service) resolveEntityImageURL(ctx context.Context, kind string, id int, variant string) (cdnURL string, localURL string) {
 	assets, err := s.GetAssets(ctx, kind, strconv.Itoa(id), []string{variant})
 	if err != nil || len(assets) == 0 {
-		return ""
+		return "", ""
 	}
-	return assets[0].CDNURL
+	return assets[0].CDNURL, assets[0].LocalURL
 }
 
 func (s *Service) GetCharacter(ctx context.Context, query string) (*Character, error) {
@@ -2250,6 +2275,7 @@ ORDER BY variant`, entityKind, entityID, variants)
 		if err := rows.Scan(&item.EntityKind, &item.EntityID, &item.Variant, &item.LocalPath, &item.CDNURL, &item.Bytes); err != nil {
 			return nil, err
 		}
+		item.LocalURL = LocalAssetURL(item.LocalPath)
 		out = append(out, item)
 	}
 	return out, rows.Err()

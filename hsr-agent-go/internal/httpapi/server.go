@@ -96,6 +96,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleAPI(w, r)
 		return
 	}
+	if r.URL.Path == tools.AssetURLPrefix || strings.HasPrefix(r.URL.Path, tools.AssetURLPrefix+"/") {
+		s.serveMedia(w, r)
+		return
+	}
 	s.serveStatic(w, r)
 }
 
@@ -824,6 +828,67 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// serveMedia 同源伺服本地资源(角色/光锥/遗器图片),避免前端跨境直连 CDN。
+// 只从 cfg.AssetRoot 读取,沿用 serveStatic 的 path.Clean + isInside 防路径穿越;
+// 不做 SPA index.html 回退(缺图返回 404,而非 HTML)。
+func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed")
+		return
+	}
+	root := strings.TrimSpace(s.cfg.AssetRoot)
+	if root == "" {
+		http.NotFound(w, r)
+		return
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rel := strings.TrimPrefix(r.URL.Path, tools.AssetURLPrefix)
+	cleanPath := filepath.FromSlash(strings.TrimPrefix(path.Clean("/"+rel), "/"))
+	if cleanPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+	fullPath := filepath.Join(rootAbs, cleanPath)
+	if !isInside(rootAbs, fullPath) {
+		http.NotFound(w, r)
+		return
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+	if ct := mediaContentType(fullPath); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, fullPath)
+}
+
+// mediaContentType 为常见图片扩展名返回确定的 MIME(避免依赖各平台 mime 注册表;
+// .webp 在 Windows 上 mime.TypeByExtension 可能为空)。未知扩展名返回空,交给 ServeFile 嗅探。
+func mediaContentType(p string) string {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".webp":
+		return "image/webp"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".svg":
+		return "image/svg+xml"
+	default:
+		return ""
+	}
 }
 
 func (s *Server) requireTools(w http.ResponseWriter) bool {

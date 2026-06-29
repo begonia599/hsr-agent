@@ -42,6 +42,7 @@ type Config struct {
 	LLMAPIFormat             string
 	HTTPAddr                 string
 	WebRoot                  string
+	AssetRoot                string
 	EmbeddingProvider        string
 	EmbeddingBaseURL         string
 	EmbeddingAPIKey          string
@@ -73,6 +74,7 @@ func Load() Config {
 		LLMAPIFormat:             getenv("LLM_API_FORMAT", "openai"),
 		HTTPAddr:                 getenv("HTTP_ADDR", "127.0.0.1:8080"),
 		WebRoot:                  getenv("WEB_ROOT", "web/dist"),
+		AssetRoot:                resolveAssetRoot(getenv("ASSET_ROOT", "nanoka_hsr/4.3.54/assets/hsr")),
 		EmbeddingProvider:        getenv("EMBEDDING_PROVIDER", "disabled"),
 		EmbeddingBaseURL:         os.Getenv("EMBEDDING_BASE_URL"),
 		EmbeddingAPIKey:          os.Getenv("EMBEDDING_API_KEY"),
@@ -96,6 +98,22 @@ func Load() Config {
 	cfg.applyDefaultEmbeddingModel()
 	cfg.applyDefaultRerankModel()
 	return cfg
+}
+
+// resolveAssetRoot 解析本地资源根目录。相对路径时按 cwd 与上一级各探一次
+// (与 loadDotEnv 探测 .env / ../.env 同思路),兼容从仓库根或 hsr-agent-go 启动。
+// 都不存在时原样返回(serveMedia 会优雅 404)。
+func resolveAssetRoot(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || filepath.IsAbs(raw) {
+		return raw
+	}
+	for _, cand := range []string{raw, filepath.Join("..", raw)} {
+		if info, err := os.Stat(cand); err == nil && info.IsDir() {
+			return cand
+		}
+	}
+	return raw
 }
 
 func loadDotEnv() {
