@@ -272,3 +272,44 @@ export function drawCardUrl(id: number): string {
 export function eidolonIconUrl(id: number, rank: number): string {
   return `${ASSET_BASE}/rank/_dependencies/textures/${id}/${id}_Rank_${rank}.webp`
 }
+
+// 光锥小图(列表/卡片)与大立绘(详情主视觉)
+export function lightconeIconUrl(id: number): string {
+  return `${ASSET_BASE}/lightconemediumicon/${id}.webp`
+}
+
+export function lightconeFigureUrl(id: number): string {
+  return `${ASSET_BASE}/lightconemaxfigures/${id}.webp`
+}
+
+// 遗器套装立绘
+export function relicSetIconUrl(id: number): string {
+  return `${ASSET_BASE}/itemfigures/${id}.webp`
+}
+
+// 遗器类型:cavern=隧洞(4件套), planar=位面/界域(2件套)
+export const KIND_LABELS: Record<string, string> = {
+  cavern: '隧洞遗器',
+  planar: '位面饰品',
+}
+
+export function kindLabel(kind: string): string {
+  return KIND_LABELS[kind] ?? kind
+}
+
+// 遗器套装效果的件数。后端 source 实测为中文 "2件套效果"/"4件套效果"
+// (也兼容可能的 2pc/4pc 写法),统一归一成 "2 件套"/"4 件套"。
+export function relicPieceLabel(source?: string): string {
+  if (!source) return ''
+  if (source.includes('4')) return '4 件套'
+  if (source.includes('2')) return '2 件套'
+  return source
+}
+
+// 排序权重:2 件套在前,4 件套在后,其余兜底
+export function relicPieceOrder(source?: string): number {
+  if (!source) return 2
+  if (source.includes('2')) return 0
+  if (source.includes('4')) return 1
+  return 2
+}

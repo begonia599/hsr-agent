@@ -96,7 +96,9 @@ export interface Lightcone {
   name_zh: string
   name_en: string
   desc_zh?: string
-  axes: unknown
+  axes: CharacterAxes
+  data_quality?: string
+  warning?: string
 }
 
 export interface RelicSet {
@@ -107,7 +109,15 @@ export interface RelicSet {
   name_en: string
   set2_desc?: string
   set4_desc?: string
-  axes: unknown
+  axes: CharacterAxes
+}
+
+// /lightcones/{id}/refinements —— 透传 raw_zh->'refinements',叠影 1-5 模板。
+// desc 带 #N[i]/#N[f1]/#N[f2] 占位符,level[lv].param_list 按叠影等级填值。
+export interface LightconeRefinements {
+  name: string
+  desc: string
+  level: Record<string, { param_list: number[] }>
 }
 
 export interface Asset {

@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { MessagesSquare, Users } from 'lucide-react'
+import { Gem, MessagesSquare, Sparkles, Users } from 'lucide-react'
 import { api } from '@/api/client'
 import type { HealthInfo } from '@/api/types'
 import { cn } from '@/lib/utils'
@@ -34,6 +34,8 @@ export function Header() {
         <nav className="flex items-center gap-1">
           {navItem('/', <MessagesSquare className="size-4" />, '对话')}
           {navItem('/characters', <Users className="size-4" />, '角色')}
+          {navItem('/lightcones', <Sparkles className="size-4" />, '光锥')}
+          {navItem('/relic-sets', <Gem className="size-4" />, '遗器')}
         </nav>
       </div>
       {health?.data?.version && (

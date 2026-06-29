@@ -4,6 +4,7 @@ import type {
   CharacterSkills,
   HealthInfo,
   Lightcone,
+  LightconeRefinements,
   Modifier,
   Recommendation,
   RelicSet,
@@ -88,8 +89,15 @@ export const api = {
   listLightcones: (q?: string, path?: string, rarity?: number, limit?: number) =>
     request<Lightcone[]>(`/api/lightcones${qs({ q, path, rarity, limit })}`),
 
+  getLightcone: (id: number) => request<Lightcone>(`/api/lightcones/${id}`),
+
+  getLightconeRefinements: (id: number) =>
+    request<LightconeRefinements>(`/api/lightcones/${id}/refinements`),
+
   listRelicSets: (q?: string, kind?: string, limit?: number) =>
     request<RelicSet[]>(`/api/relic-sets${qs({ q, kind, limit })}`),
+
+  getRelicSet: (id: number) => request<RelicSet>(`/api/relic-sets/${id}`),
 
   keywordSearch: (q: string, kind?: string, limit?: number) =>
     request<unknown[]>(`/api/search/keyword${qs({ q, kind, limit })}`),
