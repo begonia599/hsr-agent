@@ -25,10 +25,12 @@ const DefaultSystemPrompt = `你是崩坏星穹铁道的配队/抽取顾问。
 6. 涉及"是否契合"、"提升多少"、"数值加成"、"为什么适合"时,必须调用 list_character_modifiers / compare_character_fit / estimate_damage_gain 中至少一个机制工具。
 7. 对关键数值结论,用 explain_modifier_sources 或 list_character_modifiers 给出来源依据。
 8. 不要捏造未在工具返回中出现的角色或机制。
+9. 引用角色/光锥/遗器时,优先复用工具返回里的 char_id/item_id/id,写成站内 markdown 链接,如 [流萤](/characters/1310)、[荡除蠹灾的铁骑](/relic-sets/119)。不要自己编造 id/url。
+10. 如果最终答案要提到某个角色/光锥/遗器,但当前工具结果里没有可靠 id,生成最终答案前必须用 resolve_entities 一次性批量解析; found=false 的实体只写纯文本,不要加链接。
 
 格式:
 - 用国服译名,不要用英文直译。
-- 引用任何角色/光锥/遗器时附 id,如「知更鸟 (1309)」。
+- 引用任何角色/光锥/遗器时使用站内 markdown 链接;不确定 id 时才附纯文本名称。
 - 最终建议给出 1-3 套队伍,每套说明 buff 链如何成立。
 - 列出考虑过的关键候选和排除理由。
 - 涉及数值估算时,明确说明它是默认面板的局部估算,不是完整行动轴或实战伤害。`
@@ -53,11 +55,13 @@ type Runner struct {
 }
 
 type Event struct {
-	Type   string          `json:"type"`
-	Name   string          `json:"name,omitempty"`
-	Args   json.RawMessage `json:"args,omitempty"`
-	Result any             `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
+	Type       string          `json:"type"`
+	TraceID    string          `json:"trace_id,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Name       string          `json:"name,omitempty"`
+	Args       json.RawMessage `json:"args,omitempty"`
+	Result     any             `json:"result,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }
 
 func New(config Config, tools *apptools.Service) *Runner {
@@ -145,7 +149,7 @@ func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) 
 		}
 		for _, call := range assistantMsg.ToolCalls {
 			if emit != nil {
-				emit(Event{Type: "tool_call", Name: call.Function.Name, Args: safeRawJSON(call.Function.Arguments)})
+				emit(Event{Type: "tool_call", ToolCallID: call.ID, Name: call.Function.Name, Args: safeRawJSON(call.Function.Arguments)})
 			}
 			if r.config.TraceWriter != nil {
 				fmt.Fprintf(r.config.TraceWriter, "tool_call name=%s args=%s\n", call.Function.Name, call.Function.Arguments)
@@ -156,7 +160,7 @@ func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) 
 			}
 			result = compactToolResult(call.Function.Name, result)
 			if emit != nil {
-				event := Event{Type: "tool_result", Name: call.Function.Name, Result: result}
+				event := Event{Type: "tool_result", ToolCallID: call.ID, Name: call.Function.Name, Result: result}
 				if row, ok := result.(map[string]any); ok {
 					if text, ok := row["error"].(string); ok {
 						event.Error = text
@@ -277,6 +281,13 @@ func toolDefinitions() []toolDef {
 		tool("get_character", "Look up a character by id or Chinese/English name.", object(map[string]any{
 			"query": stringSchema("id or name"),
 		}, []string{"query"})),
+		tool("resolve_entities", "Resolve character, lightcone, and relic-set names into authoritative site links. Use batch mode before final answer for entities without reliable ids; do not guess when found=false.", object(map[string]any{
+			"entities": arraySchema(object(map[string]any{
+				"name": stringSchema("entity name or id"),
+				"kind": stringSchema("character/lightcone/relic_set"),
+			}, []string{"name", "kind"})),
+			"display": stringSchema("link/image/both, default link"),
+		}, []string{"entities"})),
 		tool("semantic_search", "Fuzzy pgvector search across characters, lightcones, and relic sets.", object(map[string]any{
 			"query": stringSchema("Chinese user intent or mechanics text"),
 			"kind":  stringSchema("character/lightcone/relic_set/all, default character"),
@@ -449,6 +460,8 @@ func (r *Runner) dispatchTool(ctx context.Context, name string, rawArgs string) 
 	switch name {
 	case "get_character":
 		return r.tools.GetCharacter(ctx, strArg(args, "query"))
+	case "resolve_entities":
+		return r.tools.ResolveEntities(ctx, entityRequestsArg(args, "entities"), strArgDefault(args, "display", "link"))
 	case "semantic_search":
 		return r.tools.SemanticSearch(ctx, strArg(args, "query"), strArgDefault(args, "kind", "character"), intArgDefault(args, "limit", 10))
 	case "find_needs":
@@ -587,6 +600,8 @@ func compactCharacter(c *apptools.Character) map[string]any {
 		"id":              c.ID,
 		"name_zh":         c.NameZH,
 		"name_en":         c.NameEN,
+		"url":             fmt.Sprintf("/characters/%d", c.ID),
+		"markdown":        fmt.Sprintf("[%s](/characters/%d)", c.NameZH, c.ID),
 		"rarity":          c.Rarity,
 		"path":            c.Path,
 		"element":         c.Element,
@@ -739,6 +754,25 @@ func intSliceArg(args map[string]any, key string) []int {
 		if number, ok := value.(float64); ok {
 			out = append(out, int(number))
 		}
+	}
+	return out
+}
+
+func entityRequestsArg(args map[string]any, key string) []apptools.EntityResolveRequest {
+	values, ok := args[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]apptools.EntityResolveRequest, 0, len(values))
+	for _, value := range values {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, apptools.EntityResolveRequest{
+			Name: strArg(row, "name"),
+			Kind: strArg(row, "kind"),
+		})
 	}
 	return out
 }

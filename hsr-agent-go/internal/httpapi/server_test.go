@@ -41,6 +41,72 @@ func TestSemanticSearchHTTPDisabled(t *testing.T) {
 	}
 }
 
+func TestModelsDoesNotLeakSecrets(t *testing.T) {
+	cfg := config.Config{
+		DefaultEmbeddingID:       "bge-m3",
+		EmbeddingCacheTTLSeconds: 600,
+		EmbeddingCacheMaxEntries: 256,
+		EmbeddingModels: []config.EmbeddingModel{
+			{
+				ID:         "bge-m3",
+				Label:      "bge-m3",
+				Provider:   "openai_compatible",
+				BaseURL:    "https://example.test/v1",
+				APIKey:     "secret-embedding-key",
+				Model:      "bge-m3",
+				Dimensions: 1024,
+			},
+		},
+		DefaultRerankID: "bge-reranker-v2-m3",
+		RerankModels: []config.RerankModel{
+			{
+				ID:       "bge-reranker-v2-m3",
+				Label:    "bge-reranker-v2-m3",
+				Provider: "openai_compatible",
+				BaseURL:  "https://example.test/v1",
+				APIKey:   "secret-rerank-key",
+				Model:    "bge-reranker-v2-m3",
+			},
+		},
+	}
+	server := New(cfg, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusOK, res.Body.String())
+	}
+	body := res.Body.String()
+	for _, secret := range []string{"secret-embedding-key", "secret-rerank-key"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("models response leaked secret %q: %s", secret, body)
+		}
+	}
+	for _, expected := range []string{"bge-m3", "bge-reranker-v2-m3", "default_id"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("models response missing %q: %s", expected, body)
+		}
+	}
+	for _, expected := range []string{"query_cache", "ttl_seconds", "max_entries"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("models response missing query cache field %q: %s", expected, body)
+		}
+	}
+}
+
+func TestNewTraceID(t *testing.T) {
+	first := newTraceID()
+	second := newTraceID()
+	if len(first) < 8 {
+		t.Fatalf("trace id too short: %q", first)
+	}
+	if first == second {
+		t.Fatalf("trace ids should differ, both were %q", first)
+	}
+}
+
 func TestStaticSPAFallback(t *testing.T) {
 	root := t.TempDir()
 	indexPath := filepath.Join(root, "index.html")

@@ -96,25 +96,35 @@ characters_with_axes=95
 character_axes=2156
 ```
 
-装备 axes 已完成 v1:
+装备 axes 当前状态:
 
 ```text
 lightcones_with_axes=165
 relic_sets_with_axes=60
-equipment_axes=1402
+equipment_axes=1503
 ```
 
-遗器 axes 由本地中文套装效果规则抽取,已写入 `relic_sets.axes` 和 `equipment_axes`。光锥本地 `lightcone.json` 目前缺少真实效果文本,所以 `lightcones.axes` 是基于命途和 nanoka 推荐角色画像反推的弱 axes,只能用于弱检索/推荐解释,不能当作光锥机制事实。
+设备 axes 已重建为 LLM 抽取版。光锥详情来自 `nanoka_hsr/4.3.54/<lang>/lightcone/{id}.json` 的 `refinements.desc` 与叠影 `param_list`;遗器来自中文套装效果。当前 DB 覆盖:lightcones desc=165/165, lightcone provides=165/165, relic_set provides=60/60, equipment_axes=1503。光锥接口现在返回 `data_quality=effect_text_extracted`。
 
 ## 本地向量索引
 
-默认使用本地 `local-hash-ngram-v1` 生成 1024 维向量，不调用外部 embedding API:
-
-注意:`local-hash-ngram-v1` 只是临时 ngram/hash 召回,用于跑通 pgvector 链路和机制词搜索;它不是上线级语义 embedding。M7 暴露 HTTP `semantic_search` 前必须接入真实 embedding provider,否则该接口应显式禁用并让前端使用关键词搜索/筛选。
+M7.5 起,语义搜索主路径使用 `entity_embeddings` 保存多模型实体向量。每个模型按 `embedding_model_id` 独立入库,HTTP `/api/search/semantic` 只查询与请求模型相同的向量行,避免 query embedding 与实体向量混用。
 
 ```powershell
-python scripts/embed.py
+python scripts\embed.py --model-id bge-m3 --kind all --force
 ```
+
+历史兜底模型 `local-hash-ngram-v1` 只用于验证 pgvector 链路和机制词搜索,不是上线级语义 embedding。
+
+重建真实 embedding:
+
+```powershell
+# .env 中配置 EMBEDDING_MODEL_IDS / EMBEDDING_MODEL_BGE_M3_* 后:
+python scripts\migrate.py
+python scripts\embed.py --model-id bge-m3 --kind all --force
+```
+
+Qwen3-Embedding-4B/8B 原生维度大于当前 `vector(1024)` schema,对应 model catalog 必须设置 `*_DIMENSIONS=1024`,并通过 `*_NATIVE_DIMENSIONS` / `*_PROJECTION_STRATEGY` 告诉前端真实原生维度和入库策略。bge-m3 原生 1024 维,`projection_strategy=none`。
 
 当前 embedding 覆盖:
 
@@ -122,7 +132,12 @@ python scripts/embed.py
 character_embeddings=95
 lightcone_embeddings=165
 relic_set_embeddings=60
+entity_embeddings=bge-m3/openai_compatible/1024/semantic
 ```
+
+M7.5 第二阶段已接入 hybrid recall + reranker 精排。`.env` 中配置 `RERANK_DEFAULT_ID=bge-reranker-v2-m3` 后,`/api/search/semantic` 会先做分类型 embedding 粗召回,再合并 name exact / pg_trgm / 机制关键词补召回候选,本地规则加权后送入 reranker;moark 端点实测单次最多 25 个 documents,后端会自动截断到 25。返回结果用 `recall_source` 标记 `embedding`、`keyword` 或 `embedding+keyword`。
+
+在线 query embedding 默认启用短期缓存,由 `EMBEDDING_QUERY_CACHE_TTL_SECONDS` 和 `EMBEDDING_QUERY_CACHE_MAX_ENTRIES` 控制;`GET /api/models` 会暴露缓存状态但不会暴露任何 key。
 
 ## Go 后端骨架
 
@@ -145,6 +160,20 @@ go run ./cmd/hsr-agent --tool co_occurrence --char-id 1309 --limit 5
 go run ./cmd/hsr-agent --tool recommend_lightcones --char-id 1309
 go run ./cmd/hsr-agent --tool recommend_relics --char-id 1309
 go run ./cmd/hsr-agent --tool get_assets --kind character --id 1309 --variants round,drawcard
+go run ./cmd/hsr-agent --tool resolve_entities --query "流萤" --kind character
+```
+
+搜索回归:
+
+```powershell
+python scripts/search_regression.py --base-url http://127.0.0.1:8080
+python scripts/search_regression.py --base-url http://127.0.0.1:8080 --rerank false
+```
+
+后台重建某个 embedding 模型时可以写入进度文件:
+
+```powershell
+python scripts/embed.py --model-id bge-m3 --kind all --resume --progress-file logs/embed_progress.json
 ```
 
 这些函数已经接入 `internal/agent` 的 LLM tool-use 循环。
@@ -166,7 +195,7 @@ $env:WEB_ROOT='..\frontend\dist'
 go run ./cmd/hsr-agent --serve
 ```
 
-接口契约见 `docs/API.md`。当前 `/api/search/semantic` 在 HTTP 层默认返回 `503 SEMANTIC_SEARCH_DISABLED`,前端先使用 `/api/search/keyword`、筛选和推荐接口。
+接口契约见 `docs/API.md`。未配置真实 embedding 时 `/api/search/semantic` 返回 `503 SEMANTIC_SEARCH_DISABLED`,前端先使用 `/api/search/keyword`、筛选和推荐接口。
 
 ## Go Agent 问答
 

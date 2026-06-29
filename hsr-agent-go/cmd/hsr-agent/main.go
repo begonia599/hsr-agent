@@ -15,7 +15,9 @@ import (
 	"hsr-agent-go/internal/calc"
 	"hsr-agent-go/internal/config"
 	"hsr-agent-go/internal/db"
+	"hsr-agent-go/internal/embedding"
 	"hsr-agent-go/internal/httpapi"
+	"hsr-agent-go/internal/rerank"
 	"hsr-agent-go/internal/tools"
 )
 
@@ -23,7 +25,7 @@ func main() {
 	serve := flag.Bool("serve", false, "start HTTP API server and static frontend host")
 	addr := flag.String("addr", "", "HTTP listen address, default HTTP_ADDR or 127.0.0.1:8080")
 	webRoot := flag.String("web-root", "", "frontend build directory, default WEB_ROOT or web/dist")
-	toolName := flag.String("tool", "", "tool to run: get_character, search_by_role, semantic_search, find_needs, find_buffers_for, find_synergies, suggest_team, co_occurrence, recommend_lightcones, recommend_relics, get_assets, list_character_modifiers, explain_modifier_sources, compare_character_fit, estimate_damage_gain, estimate_dot_damage, estimate_break_damage, estimate_super_break_damage, estimate_healing, estimate_shield, estimate_uptime")
+	toolName := flag.String("tool", "", "tool to run: get_character, resolve_entities, search_by_role, semantic_search, find_needs, find_buffers_for, find_synergies, suggest_team, co_occurrence, recommend_lightcones, recommend_relics, get_assets, list_character_modifiers, explain_modifier_sources, compare_character_fit, estimate_damage_gain, estimate_dot_damage, estimate_break_damage, estimate_super_break_damage, estimate_healing, estimate_shield, estimate_uptime")
 	ask := flag.String("ask", "", "ask the LLM agent a question")
 	traceTools := flag.Bool("trace-tools", false, "print LLM tool calls to stderr when using --ask")
 	query := flag.String("query", "", "query text for get_character")
@@ -88,9 +90,17 @@ func main() {
 	if err := pool.Ping(startupCtx); err != nil {
 		log.Fatalf("ping database: %v", err)
 	}
+	defaultEmbeddingID, embedders, err := embeddingClientsFromConfig(cfg)
+	if err != nil {
+		log.Fatalf("embedding config: %v", err)
+	}
+	defaultRerankID, rerankers, err := rerankClientsFromConfig(cfg)
+	if err != nil {
+		log.Fatalf("rerank config: %v", err)
+	}
 
 	if *serve {
-		service := tools.New(pool)
+		service := tools.NewWithModels(pool, defaultEmbeddingID, embedders, defaultRerankID, rerankers, cfg.RerankTopN)
 		server := &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           httpapi.New(cfg, pool, service),
@@ -107,7 +117,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		service := tools.New(pool)
+		service := tools.NewWithModels(pool, defaultEmbeddingID, embedders, defaultRerankID, rerankers, cfg.RerankTopN)
 		result, err := runTool(ctx, service, *toolName, *query, *charID, *axis, *target, *role, *element, *path, *rarity, *limit, *entityKind, *entityID, *variantCSV, *excludeCSV, *supportID, *supportIDsCSV, *attackTag, *includeEidolons, *eidolonsCSV, *scalingStat, *baseScalingStat, *abilityMultiplier, *flatValue, *breakEffect, *breakDamageBonus, *superBreakBonus, *toughnessReduction, *maxToughness, *enemyCount, *superBreakMultiplier, *enemyResistance, *defReduction, *defIgnore, *resReduction, *resPen, *vulnerability, *damageReduction, *durationTurns, *cooldownTurns, *cycleTurns, *startDelayTurns)
 		if err != nil {
 			log.Fatal(err)
@@ -128,7 +138,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		service := tools.New(pool)
+		service := tools.NewWithModels(pool, defaultEmbeddingID, embedders, defaultRerankID, rerankers, cfg.RerankTopN)
 		agentConfig := agent.Config{BaseURL: cfg.LLMBaseURL, APIKey: cfg.LLMAPIKey, Model: cfg.LLMModel}
 		if *traceTools {
 			agentConfig.TraceWriter = os.Stderr
@@ -147,6 +157,86 @@ func main() {
 		model = "(not configured)"
 	}
 	fmt.Fprintf(os.Stdout, "hsr-agent ready: database ok, model=%s\n", model)
+}
+
+func embeddingClientsFromConfig(cfg config.Config) (string, map[string]*embedding.Client, error) {
+	out := map[string]*embedding.Client{}
+	if len(cfg.EmbeddingModels) == 0 {
+		headers, err := embedding.ParseExtraHeaders(cfg.EmbeddingHeaders)
+		if err != nil {
+			return "", nil, err
+		}
+		out["default"] = embedding.NewClient(embedding.Config{
+			Provider:       cfg.EmbeddingProvider,
+			BaseURL:        cfg.EmbeddingBaseURL,
+			APIKey:         cfg.EmbeddingAPIKey,
+			Model:          cfg.EmbeddingModel,
+			Dimensions:     cfg.EmbeddingDimensions,
+			EncodingFormat: cfg.EmbeddingEncoding,
+			ExtraHeaders:   headers,
+			QueryCacheTTL:  time.Duration(cfg.EmbeddingCacheTTLSeconds) * time.Second,
+			QueryCacheMax:  cfg.EmbeddingCacheMaxEntries,
+		})
+		return "default", out, nil
+	}
+	for _, model := range cfg.EmbeddingModels {
+		headers, err := embedding.ParseExtraHeaders(model.ExtraHeaders)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: %w", model.ID, err)
+		}
+		out[model.ID] = embedding.NewClient(embedding.Config{
+			Provider:       model.Provider,
+			BaseURL:        model.BaseURL,
+			APIKey:         model.APIKey,
+			Model:          model.Model,
+			Dimensions:     model.Dimensions,
+			EncodingFormat: model.EncodingFormat,
+			ExtraHeaders:   headers,
+			QueryCacheTTL:  time.Duration(cfg.EmbeddingCacheTTLSeconds) * time.Second,
+			QueryCacheMax:  cfg.EmbeddingCacheMaxEntries,
+		})
+	}
+	defaultID := cfg.DefaultEmbeddingID
+	if defaultID == "" && len(cfg.EmbeddingModels) > 0 {
+		defaultID = cfg.EmbeddingModels[0].ID
+	}
+	return defaultID, out, nil
+}
+
+func rerankClientsFromConfig(cfg config.Config) (string, map[string]*rerank.Client, error) {
+	out := map[string]*rerank.Client{}
+	if len(cfg.RerankModels) == 0 {
+		headers, err := rerank.ParseExtraHeaders(cfg.RerankHeaders)
+		if err != nil {
+			return "", nil, err
+		}
+		out["default"] = rerank.NewClient(rerank.Config{
+			Provider:     cfg.RerankProvider,
+			BaseURL:      cfg.RerankBaseURL,
+			APIKey:       cfg.RerankAPIKey,
+			Model:        cfg.RerankModel,
+			ExtraHeaders: headers,
+		})
+		return "default", out, nil
+	}
+	for _, model := range cfg.RerankModels {
+		headers, err := rerank.ParseExtraHeaders(model.ExtraHeaders)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: %w", model.ID, err)
+		}
+		out[model.ID] = rerank.NewClient(rerank.Config{
+			Provider:     model.Provider,
+			BaseURL:      model.BaseURL,
+			APIKey:       model.APIKey,
+			Model:        model.Model,
+			ExtraHeaders: headers,
+		})
+	}
+	defaultID := cfg.DefaultRerankID
+	if defaultID == "" && len(cfg.RerankModels) > 0 {
+		defaultID = cfg.RerankModels[0].ID
+	}
+	return defaultID, out, nil
 }
 
 func runTool(
@@ -203,6 +293,11 @@ func runTool(
 	switch toolName {
 	case "get_character":
 		return service.GetCharacter(ctx, query)
+	case "resolve_entities":
+		if query == "" || entityKind == "" {
+			return nil, fmt.Errorf("--query and --kind are required")
+		}
+		return service.ResolveEntities(ctx, []tools.EntityResolveRequest{{Name: query, Kind: entityKind}}, "both")
 	case "search_by_role":
 		return service.SearchByRole(ctx, role, element, path, rarity, limit)
 	case "semantic_search":

@@ -669,23 +669,26 @@ d:\aitest\
 - [x] `scripts/load_axes.py`:把 enriched JSON 合并进 PG
   - [x] UPDATE `characters.axes`
   - [x] 拍平到 `character_axes` 表
-- [x] 同样对 `lightcones` / `relic_sets` 做一遍 axes(规模小,简单);这是 M7 推荐接口上线前的阻断项,否则 `recommend_lightcones` / `recommend_relics` 只能给 nanoka 排名,解释和精排质量不足。
+- [x] 对装备做 axes 画像:遗器使用中文套装效果,光锥使用详情 `refinements.desc` + 叠影参数。
   - [x] `migrations/003_equipment_axes.sql`:新增 `equipment_axes`
-  - [x] `scripts/enrich_equipment.py`:遗器从中文套装效果规则抽取;光锥当前因本地 `lightcone.json` 缺少效果文本,只做 nanoka 推荐角色画像反推的弱 axes
+  - [x] `scripts/load.py`:读取 `nanoka_hsr/4.3.54/<lang>/lightcone/{id}.json` 的 `refinements.desc` / `refinements.level.*.param_list`,写入 `lightcones.desc_zh/raw_zh`
+  - [x] `scripts/enrich_equipment.py --mode llm`:遗器与光锥统一用 LLM 抽取 equipment axes,并用受控词表归一化
   - [x] `scripts/load_equipment_axes.py`:写回 `lightcones.axes` / `relic_sets.axes`,并拍平到 `equipment_axes`
-  - [x] Go `recommend_lightcones` / `recommend_relics`:返回 equipment axes、综合 score、reasons、matched_provides / matched_requirements / matched_tags
+  - [x] Go `recommend_relics`:返回真实 relic axes、综合 score、reasons、matched_provides / matched_requirements / matched_tags
+  - [x] Go `recommend_lightcones`:光锥效果文本存在时返回 `data_quality=effect_text_extracted`,并使用真实 lightcone axes 加权
 
-**当前状态**:`enrich.py --dry-run --ids 1309` 已通过;95/95 角色 axes 已生成并装载,`characters` 中 `axes <> '{}'` 的角色数为 95,`character_axes` 行数为 2156。装备 axes 已完成 v1:lightcones_with_axes=165,relic_sets_with_axes=60,equipment_axes=1402。日志见 `logs/enrich_worker.log`,状态见 `logs/enrich_worker_state.json`。
+**当前状态**:`enrich.py --dry-run --ids 1309` 已通过;95/95 角色 axes 已生成并装载,`characters` 中 `axes <> '{}'` 的角色数为 95,`character_axes` 行数为 2156。装备 axes 已重建为 LLM 抽取版:lightcones desc=165/165, lightcone provides=165/165, relic_set provides=60/60, equipment_axes=1503。日志见 `logs/enrich_worker.log`,状态见 `logs/enrich_worker_state.json`。
 
 **验收**:
 - 抽查知更鸟的 axes,`provides` 至少有 `atk_percent`、`dmg_percent` 两条针对 `all_allies`
 - SQL `SELECT name_zh FROM characters c JOIN character_axes ca ON ca.char_id=c.id WHERE ca.kind='provides' AND ca.stat='atk_percent' AND ca.target='all_allies'` 应返回至少 5 个合理结果(知更鸟、花火、布洛妮娅等)
 
-### M3 — 向量(0.5 天;当前为临时链路)
+### M3 — 向量(0.5 天)
 
-- [x] 临时 embedding 模型:当前使用本地 `local-hash-ngram-v1` 1024 维,不调用外部 API;它只用于验证 pgvector 链路和机制词召回,不是最终语义模型。
-- [ ] M7 暴露 HTTP semantic search 前,必须替换成真实 embedding provider,或显式禁用 semantic search API。
-- [x] schema 里的 `vector(1024)` 已匹配当前本地 embedding
+- [x] 历史临时 embedding 模型:`local-hash-ngram-v1` 1024 维,只用于验证 pgvector 链路和机制词召回。
+- [x] 真实 embedding 已重建:当前入库模型为 OpenAI-compatible `bge-m3`,1024 维,`embedding_quality=semantic`。
+- [x] M7 暴露 HTTP semantic search 前,必须替换成真实 embedding provider,或显式禁用 semantic search API。
+- [x] schema 里的 `vector(1024)` 已匹配当前 bge-m3 embedding
 - [x] `scripts/embed.py`:
   - [x] 对每个角色:拼接 `name_zh + name_en + path + element + roles + axes + skill_text_zh` 做 embedding
   - [x] 光锥/遗器套装同样写入 embedding
@@ -693,9 +696,9 @@ d:\aitest\
 - [x] HNSW 索引已在 `001_schema.sql` 创建
 - [x] Go 工具层已实现 `semantic_search`
 
-**当前状态**:`character_embeddings=95`, `lightcone_embeddings=165`, `relic_set_embeddings=60`。`semantic_search("需要暴击伤害辅助", "character", 8)` 能召回花火、星期日、知更鸟等;`semantic_search("持续伤害 dot 卡芙卡 队友", "character", 8)` 能召回卡芙卡、黑天鹅、桑博、桂乃芬等。
+**当前状态**:`entity_embeddings` 已写入 `bge-m3 / openai_compatible / 1024 / semantic`:character=95, lightcone=165, relic_set=60。`semantic_search("击破 超击破 流萤 队友", "character", 8)` 能召回流萤、乱破、同谐开拓者等;`semantic_search("击破套装 超击破 防御无视", "relic_set", 8)` top1 为荡除蠹灾的铁骑。
 
-**注意**:本地 hash embedding 是为了把 pgvector 链路跑通并做机制词召回,不是最终语义排序模型。最终推荐仍以 axes SQL / co-occurrence / Agent 解释为主。M7 不允许把 `local-hash-ngram-v1` 包装成"真语义搜索"暴露给前端自由文本搜索。
+**注意**:最终推荐仍以 axes SQL / co-occurrence / Agent 解释为主。embedding 用于自由文本召回和长尾意图兜底,不应替代结构化机制判断。
 
 ### M4 — Agent + 工具(1-2 天)
 
@@ -928,7 +931,7 @@ CREATE TABLE character_modifiers (
 
 - [ ] Web UI 由前端负责;后端只保证 API、SSE 和静态资源路径稳定。
 - [ ] 头像/光锥图自动展示由前端实现;后端通过 `get_assets` / `/api/assets` 提供路径。
-- [ ] 对话历史持久化如需要由后端提供表和接口,前端负责展示。
+- [ ] 对话历史持久化列入 M7.6;后端提供表和接口,前端负责会话列表/历史回看展示。
 - [ ] 多用户如需要由后端提供鉴权和数据隔离,前端负责登录/会话体验。
 
 ### M7 — 前后端分工与 HTTP API 契约(1-2 天)
@@ -937,9 +940,9 @@ CREATE TABLE character_modifiers (
 
 **M7 前置质量门槛**:
 
-- 当前 `local-hash-ngram-v1` 只是机制词/字面 ngram 召回,不能包装成"真语义搜索"给前端使用。
-- M7 如果暴露 `semantic_search` HTTP API,必须先接入真实 embedding 模型,或在接口返回中明确 `embedding_quality=lexical_hash` 并禁止前端把它设计成自由文本语义搜索。
-- 光锥与遗器套装 `axes` 已补 v1,`recommend_lightcones` / `recommend_relics` 已返回 score/reasons/matched_*。注意:光锥仍缺真实效果文本,当前 axes 是弱画像,不能当作光锥机制事实。
+- 真实 embedding 已接入并重建:`bge-m3` / 1024 / `embedding_quality=semantic`;`local-hash-ngram-v1` 只能作为离线链路兜底,不能包装成"真语义搜索"给前端使用。
+- M7.5 后 `semantic_search` HTTP API 必须校验当前 `embedding_model_id` 在 `entity_embeddings` 中已覆盖对应实体类型,不能静默降级到另一个 embedding 模型。
+- 光锥与遗器套装 `axes` 已补齐 LLM 抽取版,`recommend_lightcones` / `recommend_relics` 已返回 score/reasons/matched_*。光锥效果文本来自详情 `refinements.desc`,不再使用弱画像作为机制事实。
 
 **分工约定**:
 
@@ -950,24 +953,29 @@ CREATE TABLE character_modifiers (
 **后端交付**:
 
 - [x] 新增 Go HTTP server,保留 CLI 作为调试入口;支持 `--serve`、`HTTP_ADDR`、`WEB_ROOT`,同端口托管前端 SPA。
-- [x] 新增 embedding provider 配置占位:`EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS`;真实 embedding 生成/查询链路未接入前,HTTP semantic search 仍禁用。
-- [ ] 推荐默认方案:开发与线上轻量部署用 OpenAI-compatible embedding,维度配置为 1024 以兼容当前 PG schema;本地离线可选 BGE-M3 或 Qwen3-Embedding。
-- [ ] `semantic_search` 结果必须返回 `embedding_model`、`embedding_dimensions`、`embedding_quality`、`score` 和 `score_explain`。
+- [x] 新增真实 embedding provider 配置:`EMBEDDING_PROVIDER=openai_compatible` / `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` / `EMBEDDING_ENCODING_FORMAT` / `EMBEDDING_EXTRA_HEADERS`。
+- [x] 推荐默认方案:开发与线上轻量部署用 OpenAI-compatible embedding,维度配置为 1024 以兼容当前 PG schema;本地离线可选 BGE-M3 或 Qwen3-Embedding。
+- [x] `semantic_search` 结果必须返回 `embedding_model`、`embedding_dimensions`、`embedding_quality`、`score` 和 `score_explain`。
+- [x] `entity_embeddings` 记录离线入库向量的 embedding_model_id/provider/model/storage_dimensions/content_hash;在线查询前校验模型覆盖,防止混用模型。
+- [x] 新增多模型 catalog 配置与 `GET /api/models`;前端可读取 embedding/reranker 的 id、名称、默认值和 ready/selectable 状态,但不会拿到 API key。
 - [x] 如果真实 embedding 未配置,HTTP API 仍可启动,但 `/api/search/semantic` 返回 `503 SEMANTIC_SEARCH_DISABLED`,前端改走精确筛选/关键词搜索。
 - [x] 补齐 relic_set axes v1:抽取 2件/4件/2件套 stat、适用输出类型、限制条件。
-- [x] 补齐 lightcone weak axes v1:基于命途与 nanoka 推荐角色画像反推 needs/tags,用于弱检索和推荐解释。
-- [ ] 补抓 lightcone 真实效果文本后,抽取提供/需求 stat、触发条件、叠影数值,替换当前弱 axes。
+- [x] 补齐 lightcone 真实 axes:读取光锥详情 `refinements.desc` 与叠影参数,用 LLM 抽取 provides/needs/restricts/tags。
+- [x] `recommend_lightcones` 使用真实 lightcone axes 加权,接口返回 `data_quality=effect_text_extracted`。
 - [x] `GET /api/health`:返回数据库、版本、模型配置可用性。
 - [x] `GET /api/characters`:角色列表,支持 `q/path/element/role/rarity` 过滤。
 - [x] `GET /api/characters/{id}`:角色详情、roles、axes 摘要。
 - [x] `GET /api/characters/{id}/assets`:返回本地/CDN asset path 映射,由前端决定如何展示。
 - [x] `GET /api/characters/{id}/modifiers`:角色机制效果,支持 `stat_key/target_scope` 过滤。
-- [x] `GET /api/lightcones` / `GET /api/lightcones/{id}`:光锥列表与详情,包含 axes。
+- [x] `GET /api/lightcones` / `GET /api/lightcones/{id}`:光锥列表与详情;补抓效果文本前隐藏 weak axes,返回 `data_quality` 与 warning。
 - [x] `GET /api/relic-sets` / `GET /api/relic-sets/{id}`:遗器套装列表与详情,包含 axes。
-- [x] `GET /api/search/semantic`:HTTP 层显式禁用,返回 `503 SEMANTIC_SEARCH_DISABLED`;真语义搜索等真实 embedding 接入后开放。
+- [x] `GET /api/search/semantic`:真实 OpenAI-compatible embedding 配置启用且 metadata 匹配时开放;未配置时返回 `503 SEMANTIC_SEARCH_DISABLED`。
+- [x] `GET /api/search/semantic` 支持 `embedding_model_id`;只有对应模型与 DB metadata 匹配时可用,防止跨模型向量混用。
 - [x] `GET /api/search/keyword`:trgm/LIKE 搜索;即使没有真实 embedding 也可用。
+- [x] `POST /api/entities/resolve`:批量解析角色/光锥/遗器名称,返回站内 URL、markdown 和可选图片 URL;低相似度不猜。
 - [x] `POST /api/agent/chat`:非流式问答,用于调试和自动测试。
 - [x] `POST /api/agent/chat/stream`:SSE 输出 tool_call、tool_result、final、error 事件;token 级 message_delta 留到上游 LLM streaming 改造。
+- [x] Agent HTTP/SSE 事件返回 `trace_id`,并在响应头写入 `X-Trace-Id`;SSE `tool_call/tool_result` 事件带 `tool_call_id`。
 - [x] `POST /api/mechanics/*`:暴露局部计算工具,先覆盖 damage/dot/break/super_break/heal/shield/uptime。
 - [x] 生成 `docs/API.md`,包含请求/响应样例和 SSE event schema。
 
@@ -980,15 +988,167 @@ CREATE TABLE character_modifiers (
 {"type":"error","code":"LLM_UPSTREAM_ERROR","message":"..."}
 ```
 
+**实体链接/站内引用策略(M7 范围)**:
+
+- 采用 A+B1 组合:Agent 优先复用工具返回里的 `char_id` / `item_id` / `id` 输出标准站内 markdown 链接;缺可靠 id 时,再一次性批量调用 `resolve_entities`。
+- 后端负责权威解析和兜底:
+  - `POST /api/entities/resolve` 和 Agent tool `resolve_entities` 批量解析角色、光锥、遗器套装名称。
+  - 返回 `found/id/url/markdown/image_url/score/reason`;低相似度或未知类型返回 `found=false`,不猜。
+  - 图片 URL 只作为可选字段;默认对话输出以链接为主,避免刷屏。
+- 前端负责展示和跳转:
+  - 新增或确认 `/lightcones/:id`、`/relic-sets/:id` 页面。
+  - markdown 中 `/characters/*`、`/lightcones/*`、`/relic-sets/*` 站内链接渲染成 SPA `<Link>`,外链仍走普通 `<a>`。
+  - 可选:基于 `image_url` 做 hover 卡片或详情页图片,不要要求 Agent 默认插入大图。
+- 该能力属于 M7 的前后端契约和 Agent 输出规范,不放进 M7.5;M7.5 只处理搜索质量、embedding、多路召回和 reranker。
+
 **验收标准**:
 
 - [x] 前端能不读数据库完成角色搜索、角色详情、对话问答、工具轨迹展示。
 - [x] 前端能不读数据库完成光锥/遗器套装搜索、详情和基础推荐展示。
-- [x] 光锥/遗器套装 axes 不再为空,推荐结果能解释"为什么适合"。
+- [x] 遗器套装 axes 可解释推荐理由;光锥补抓效果文本前只解释 nanoka 推荐排名和命途匹配,不使用 weak axes 作为机制依据。
 - [x] `/api/search/semantic` 不再使用 `local-hash-ngram-v1`;未配置真实 embedding 时必须显式禁用。
+- [x] `resolve_entities` 已作为 HTTP handler、Agent tool 和 CLI `--tool resolve_entities` 暴露;HTTP 支持 POST 批量与 GET 单实体解析。
+- [ ] Agent 端到端回答能把工具返回的角色/光锥/遗器 id 写成站内 markdown 链接,且不会为 `found=false` 实体编造 URL。
+- [ ] 前端站内 markdown 链接点击后走 SPA 路由,不整页刷新;光锥和遗器链接有详情页落点。
 - [ ] 同一个 agent 问题在 CLI 和 HTTP 下工具调用结果一致。
 - [ ] LLM key 只从环境变量读取,接口和日志不泄露 key。
 - [x] `go test ./...` 通过,并新增至少 3 个 HTTP handler 测试。
+
+### M7.5 — 搜索质量 v2:hybrid recall、本地重排、可选 reranker(1-2 天)
+
+**目标**:把 `/api/search/semantic` 从"单路向量 top-k"升级成可解释、可控、适合前端自由文本搜索的搜索服务。embedding 只做第一阶段粗召回,最终排序由结构化数据、关键词和可选 reranker 共同决定。
+
+**背景结论**:
+
+- 全量 embedding 构建慢可以接受,但必须作为离线/后台任务运行;用户搜索时只编码 query,不能每次重算实体向量。
+- 当前 `vector(1024)` schema 下,`bge-m3` 原生 1024 维,角色/光锥/遗器混合召回更均衡;`Qwen3-Embedding-8B` 对角色/队友语义更强,但需要 4096→1024 截断,且本次测试中遗器召回明显偏弱。
+- 单一 top-k 容易让某一类实体挤掉其他类型;例如问题同时提到"队友/遗器/光锥"时,必须按实体类型分别召回再合并。
+- embedding 模型不能只在查询端随便切换:实体向量和 query 向量必须来自同一个模型、同一个维度/截断策略、同一个文本构造版本,否则 cosine 分数没有可比性。
+- `/api/models` 暴露的 embedding catalog 只是"可配置模型列表";只有对应模型的实体向量已经离线生成并覆盖角色/光锥/遗器后,才能标记为 `ready/selectable=true`。
+
+**多 embedding 模型预生成方案**:
+
+1. 新增独立实体向量表,不要继续只依赖 `characters.embedding` / `lightcones.embedding` / `relic_sets.embedding` 单列:
+
+   ```sql
+   CREATE TABLE entity_embeddings (
+       entity_kind          TEXT NOT NULL CHECK (entity_kind IN ('character', 'lightcone', 'relic_set')),
+       entity_id            INT NOT NULL,
+       embedding_model_id   TEXT NOT NULL,
+       provider             TEXT NOT NULL,
+       model                TEXT NOT NULL,
+       native_dimensions    INT NOT NULL,
+       storage_dimensions   INT NOT NULL,
+       projection_strategy  TEXT NOT NULL DEFAULT 'none', -- none / truncate_1024 / provider_dimensions
+       quality              TEXT NOT NULL,
+       content_hash         TEXT NOT NULL,
+       embedding            vector(1024) NOT NULL,
+       updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+       PRIMARY KEY (entity_kind, entity_id, embedding_model_id)
+   );
+   ```
+
+2. 当前 MVP 仍统一存 `vector(1024)`:
+   - `bge-m3`:原生 1024 维,`projection_strategy=none`,作为默认模型。
+   - `Qwen3-Embedding-4B/8B`:如果服务端只能返回 4096 维,先按已知策略截断到 1024,并明确记录 `projection_strategy=truncate_1024`;不要把它宣传成"完整 4096 维 Qwen 搜索"。
+   - 如果后续回归集证明 Qwen 全维明显更好,再单独做 `entity_embeddings_4096` 或调整 schema/index,不要混在当前 1024 索引里。
+3. `scripts/embed.py` 改成可重复后台任务:
+   - 参数:`--model-id bge-m3|qwen3-embedding-8b|qwen3-embedding-4b`、`--kinds character,lightcone,relic_set`、`--resume`。
+   - 从 `.env` 的 `EMBEDDING_MODEL_IDS` / `EMBEDDING_MODEL_<ID>_*` 读取模型配置。
+   - 按 `content_hash` 跳过未变化实体;模型、维度、截断策略或文本构造版本变化时自动重建。
+   - 输出进度:总数、已完成、跳过、失败、当前模型、预计剩余;HTTP 服务不阻塞等待。
+4. Go `SemanticSearchWithModel` 必须按 `embedding_model_id` 查询 `entity_embeddings`,并 join 回角色/光锥/遗器主表;旧的三张主表 `embedding` 列只保留兼容,不再作为新搜索主路径。
+5. `/api/models` 的 ready/selectable 改成看 `entity_embeddings` 覆盖率:
+   - 每个模型分别返回 `coverage.character/lightcone/relic_set`、`storage_dimensions`、`projection_strategy`、`quality`。
+   - 覆盖不完整时 `ready=false`,前端可以展示但不能默认选择。
+6. 光锥效果文本已经补齐,但只要 `lightcones.desc_zh` 或 equipment axes 重建:
+   - 必须重跑所有已启用 embedding 模型,否则语义搜索仍会基于旧文本/旧 axes。
+   - `/api/models` 应通过覆盖率和 content hash 暴露哪些模型已经完成重建。
+
+**第二阶段搜索流程**:
+
+1. embedding / hybrid 先召回每类候选:
+   - characters top 30
+   - lightcones top 30
+   - relic_sets top 30
+   - keyword / pg_trgm / name exact match 额外补召回一批
+2. 本地规则先加权:
+   - 问题出现"角色/队友/配队/辅助/主C"时提高 `character` 权重。
+   - 问题出现"光锥/专武/武器"时提高 `lightcone` 权重。
+   - 问题出现"遗器/套装/位面/饰品"时提高 `relic_set` 权重。
+   - 问题出现"击破/超击破"时提高 `break`、`super_break`、`break_eff`、相关 axes/tags 权重。
+   - 名称精确命中、别名命中、Nanoka 推荐命中、axes 精确命中额外加权。
+3. reranker 再对 top N 做精排:
+   - reranker 是可选配置;未配置时只走本地规则重排。
+   - 当前 moark `bge-reranker-v2-m3` 端点实测单次最多 25 个 documents,后端会把 `rerank_top_n` 截到 25。
+   - reranker 输入为 `query + candidate_text`,输出相关性分数;不替代 embedding,只负责候选排序。
+   - reranker 不能救回第一阶段没有召回的实体,所以第一阶段必须做分类型召回和关键词补召回。
+
+**后端交付**:
+
+- [x] 新增 migration `005_entity_embeddings.sql`:建立 `entity_embeddings` 多模型实体向量表,保留旧 embedding 列但停止作为新搜索主路径。
+- [x] 为 `entity_embeddings` 建 HNSW/必要过滤索引;如果 pgvector 对混合维度不友好,本阶段坚持统一 `storage_dimensions=1024`。
+- [x] 改造 `scripts/embed.py`:支持 `--model-id`、`--kinds`、`--resume`,按 content hash 增量写入 `entity_embeddings`。
+- [x] `/api/models` ready/selectable 从 `embedding_metadata` 单模型校验升级为按 `entity_embeddings` 覆盖率校验,并返回各模型覆盖数量与截断策略。
+- [x] `SemanticSearchWithModel` 改查 `entity_embeddings`,强制 query encoder 与实体向量使用相同 `embedding_model_id`。
+- [x] 新增搜索聚合接口或升级 `/api/search/semantic`,返回 `recall_score`、`rule_score`、`rerank_score`、`final_score` 和 `score_explain`。
+- [x] 实现分类型向量召回:角色/光锥/遗器分别 topN,避免混合 top-k 互相挤占。
+- [x] 合并 keyword/trgm/name exact 召回,用于补足向量召回漏掉的实体;`score_explain` / `recall_source` 会标记 `embedding`、`keyword` 或 `embedding+keyword`。
+- [x] 实现第一版本地规则重排,使用 `kind`、`roles`、`element`、机制词和候选文本加权;`character_recommendations` / `team_cooccur` 可在后续规则层继续接入。
+- [x] 新增可选 reranker provider 配置:`RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TOP_N`。
+- [x] 新增可选 reranker 多模型 catalog 配置:`RERANK_MODEL_IDS` + `RERANK_MODEL_<ID>_*`;默认 moark `bge-reranker-v2-m3`,前端通过 `/api/models` 选择。
+- [x] reranker 未配置、超时或返回错误时降级到本地规则重排,接口仍可用并在 `score_explain` 标记降级原因。
+- [x] 给 query embedding 增加短期缓存,同一个问题重复搜索时不重复请求外部 embedding;`/api/models` 暴露 `embedding.query_cache`。
+- [x] 把全量 embedding 重建做成可后台运行的 CLI 任务:`scripts/embed.py --progress-file logs/embed_progress.json` 记录进度、当前模型、已处理数量、失败数量;前端不阻塞等待。
+- [x] 建立 10-20 条中文自由文本搜索回归集:`docs/search_regression.json` + `scripts/search_regression.py`,覆盖击破、追击、DOT、暴击辅助、生存位、光锥、遗器套装。
+
+**验收标准**:
+
+- [ ] 同时预生成 `bge-m3`、`qwen3-embedding-8b`、`qwen3-embedding-4b` 后,`/api/models` 能分别展示覆盖率、默认模型和是否可选择。
+- [x] 选择不同 `embedding_model_id` 时,后端使用对应模型生成 query embedding,并只查询同模型的 `entity_embeddings` 行。
+- [x] 任一模型缺少角色/光锥/遗器向量覆盖时,前端可见但不可选;接口不能静默降级到另一个 embedding 模型。
+- [x] 查询"火属性击破主C 超击破 队友 遗器 光锥"时,top 结果同时包含流萤/忘归人或同谐开拓者/铁骑/劫火莲灯/相关光锥,且 `score_explain` 能解释来源。
+- [x] 查询只包含"遗器"或"光锥"意图时,对应实体类型不会被角色结果淹没。
+- [ ] 未配置 reranker 时搜索可用;配置 reranker 后前 10 名排序质量在回归集上不低于本地规则版本。
+- [x] 全量 embedding 任务不阻塞 HTTP 服务,重复运行只处理缺失或模型不匹配的数据。
+
+### M7.6 — 对话持久化 + Agent 行为溯源(1-2 天)
+
+**目标**:把实时 Agent 问答从"一次性 SSE 流"升级为可回看的会话与可审计的 tool trace。实时侧边栏不依赖本阶段;历史会话、刷新后复原右侧 Agent 工作台、质量排查和问题回放依赖本阶段。
+
+**依据文档**:`docs/BACKEND_REQ_persistence_audit.md`。该文档中"无 trace_id"的现状已过时:M7 已实现 `trace_id`、`X-Trace-Id`、SSE `tool_call_id`;M7.6 负责把这些信息落库并开放查询。
+
+**后端交付**:
+
+- [ ] 新增 migration `006_persistence_audit.sql`,不要使用旧文档里的 `003_persistence.sql` 编号。
+- [ ] 新增会话表:
+  - `conversations`:会话、匿名 `session_id`、标题、更新时间、meta。
+  - `messages`:用户/助手消息正文,assistant 消息关联 `turn_id`。
+- [ ] 新增 Agent 溯源表:
+  - `agent_turns`:一次用户提问,包含 `trace_id`、`conversation_id`、`model`、`status`、`latency_ms`、`tool_call_count`、可选 token usage、错误信息。
+  - `agent_tool_calls`:按 seq 记录工具名、参数、结果、错误、耗时。
+- [ ] `POST /api/agent/chat` 与 `/api/agent/chat/stream` 请求体新增可选 `conversation_id`、`session_id`;旧 `{message}` 调用保持可用,不传时自动创建会话。
+- [ ] 非流式响应和 SSE `status/final/error` 事件回传 `conversation_id` + `trace_id`;SSE `tool_call/tool_result` 继续带 `trace_id/tool_call_id`。
+- [ ] 新增查询接口:
+  - `GET /api/conversations?session_id=&limit=&offset=`
+  - `GET /api/conversations/{id}`
+  - `PATCH /api/conversations/{id}` 修改标题
+  - `DELETE /api/conversations/{id}` 级联删除消息和 trace
+  - `GET /api/conversations/{id}/turns`
+  - `GET /api/turns/{trace_id}`
+- [ ] `agent.chat` 解析 OpenAI-compatible `usage.prompt_tokens/completion_tokens/total_tokens`;上游不返回 usage 时字段留空,不阻断。
+- [ ] 采集工具调用耗时:优先在 `agent.Event` 增加 `latency_ms`,由 `dispatchTool` 前后计时。
+- [ ] 落库失败不得影响用户拿到回答;SSE 先正常推送,turn 结束后批量写入或低阻塞写入。
+- [ ] 入库前只存 compact 后的 tool result,不存 LLM API key/base_url,不存完整 raw prompt。
+
+**验收标准**:
+
+- [ ] 一次流式问答后,`conversations/messages/agent_turns/agent_tool_calls` 关联完整。
+- [ ] `GET /api/conversations/{id}` 能返回按时间排序的 user/assistant messages。
+- [ ] `GET /api/turns/{trace_id}` 返回与实时 SSE 一致的工具调用链,包含 args/result/error/latency/seq。
+- [ ] 正常完成、LLM 错误、前端断开、达到工具步数上限分别能记录 `completed/error/aborted/max_steps`。
+- [ ] 任意接口/日志/DB 不出现 LLM API key。
+- [ ] 新增至少 1 个持久化写入测试 + 1 个 trace 查询 handler 测试;`go test ./...` 通过。
 
 ### M8 — 机制模型 v2:敌方 debuff、施放者面板、条件语义(2-4 天)
 
@@ -1067,7 +1227,7 @@ CREATE TABLE character_modifiers (
 
 - [ ] Docker compose 增加 backend service,一条命令启动 PG + Go API。
 - [ ] migration 支持版本检查和 checksum,禁止 silent drift。
-- [ ] 增加 request trace id,每次 agent 问答可追踪 tool calls。
+- [ ] Agent trace 持久化由 M7.6 实现;M10 只保留长期运维增强,如归档、清理策略和更完整审计报表。
 - [ ] 统一错误码:`BAD_REQUEST`、`NOT_FOUND`、`LLM_UPSTREAM_ERROR`、`DB_UNAVAILABLE`、`TOOL_EXECUTION_ERROR`。
 - [ ] 增加缓存:角色详情、modifier 列表、常见计算结果、LLM 对话可选缓存。
 - [ ] 增加 golden tests:固定问题、固定工具调用、固定关键结论。
@@ -1127,9 +1287,12 @@ CREATE TABLE character_modifiers (
 ## 6. 已知缺口 / 待决问题(留给实施时确认)
 
 1. **embedding 模型选型**
-   - 已决策:M7 暴露 HTTP semantic search 前必须接入真实 embedding,不能继续用 `local-hash-ngram-v1` 冒充语义搜索。
-   - 云端/网关优先:OpenAI-compatible embedding provider,维度配置为 1024 以兼容当前 `vector(1024)` schema;如模型只支持其他维度,需新增 migration 调整 vector 维度和 HNSW 索引。
-   - 本地优先:可选 BGE-M3 或 Qwen3-Embedding,但必须通过离线回归集验证中文自由文本召回。
+   - 已接入:HTTP semantic search 使用 OpenAI-compatible embedding provider,在线查询与离线入库都要求同一 provider/model/dimensions。
+   - 云端/网关优先:OpenAI-compatible embedding provider,维度配置为 1024 以兼容当前 `vector(1024)` schema;如模型只支持其他维度,本阶段只能显式截断/投影并记录策略,或新增独立高维向量表和索引。
+   - 默认模型:先用 `bge-m3`,因为它原生 1024 维、多语言表现稳定、角色/光锥/遗器混合召回更均衡。
+   - 可选模型:`Qwen3-Embedding-4B/8B` 可以暴露给前端,但必须先离线生成对应 `entity_embeddings`;如果使用 4096→1024 截断,接口必须展示 `projection_strategy=truncate_1024`。
+   - 多模型原则:不能只切 query embedding;每个模型都要各自预生成实体向量,并在搜索时只查询同模型向量。
+   - 回归评估:用 10-20 条中文自由文本搜索集评估 bge-m3 / qwen3-embedding-4b / qwen3-embedding-8b,分别记录角色、光锥、遗器的 top10 命中率和排序质量。
    - 兜底策略:真实 embedding 未配置时,`/api/search/semantic` 返回 503,前端使用 `/api/search/keyword`、角色筛选和推荐接口。
 
 2. **是否需要"用户已有角色 / 等级"维度**
@@ -1265,5 +1428,5 @@ M5 完成后的新增 DOD:
 
 ---
 
-**文档版本**:v4 — 2026-06-27
-**下一步**:后端先进入 M7,把现有 CLI/Agent 能力封装成 Go HTTP API 与 SSE 流式接口;同时保留 M5.6 回归问题作为 API/Agent 的 golden tests。
+**文档版本**:v5 — 2026-06-29
+**下一步**:M7/M7.5 后端 API 契约已基本稳定;如前端要历史会话/历史侧边栏复原,先做 M7.6 持久化与 Agent 溯源,否则继续 M8 机制模型 v2。

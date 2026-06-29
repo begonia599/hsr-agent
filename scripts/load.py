@@ -26,6 +26,7 @@ UNBREAK_RE = re.compile(r"<unbreak>(.*?)</unbreak>", re.IGNORECASE | re.DOTALL)
 RUBY_B_RE = re.compile(r"\{RUBY_B#([^}]*)\}")
 RUBY_E_RE = re.compile(r"\{RUBY_E#\}")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+PLACEHOLDER_RE = re.compile(r"#(\d+)(?:\[[^\]]+\])?")
 
 
 def require_psycopg() -> None:
@@ -169,6 +170,73 @@ def relic_desc(set_data: dict[str, Any], bonus: str, lang: str) -> str | None:
     return clean_text(row.get(lang))
 
 
+def load_lightcone_detail(data_dir: Path, lang: str, lightcone_id: int) -> dict[str, Any]:
+    path = data_dir / lang / "lightcone" / f"{lightcone_id}.json"
+    if not path.exists():
+        return {}
+    return load_json(path)
+
+
+def lightcone_refinement(detail: dict[str, Any]) -> dict[str, Any]:
+    refinements = detail.get("refinements")
+    return refinements if isinstance(refinements, dict) else {}
+
+
+def lightcone_refinement_desc(detail: dict[str, Any]) -> str:
+    refinements = lightcone_refinement(detail)
+    return clean_text(refinements.get("desc") or detail.get("desc"))
+
+
+def lightcone_refinement_params(detail: dict[str, Any], level: str = "1") -> list[Any]:
+    refinements = lightcone_refinement(detail)
+    levels = refinements.get("level") or {}
+    if not isinstance(levels, dict):
+        return []
+    row = levels.get(level) or {}
+    if not isinstance(row, dict):
+        return []
+    params = row.get("param_list") or []
+    return params if isinstance(params, list) else []
+
+
+def render_param_placeholders(raw_text: str, params: list[Any]) -> str:
+    text = clean_text(raw_text)
+
+    def replace(match: re.Match[str]) -> str:
+        index = int(match.group(1)) - 1
+        if index < 0 or index >= len(params):
+            return match.group(0)
+        value = params[index]
+        is_percent_placeholder = text[match.end() : match.end() + 1] == "%"
+        if isinstance(value, (int, float)) and is_percent_placeholder:
+            return f"{value * 100:g}"
+        return f"{value:g}" if isinstance(value, (int, float)) else str(value)
+
+    return PLACEHOLDER_RE.sub(replace, text)
+
+
+def build_lightcone_desc(detail: dict[str, Any], level: str = "1") -> str:
+    refinements = lightcone_refinement(detail)
+    raw_desc = lightcone_refinement_desc(detail)
+    params = lightcone_refinement_params(detail, level)
+    desc = render_param_placeholders(raw_desc, params)
+    name = clean_text(refinements.get("name"))
+    lines: list[str] = []
+    if name:
+        lines.append(f"光锥技能: {name}")
+    if desc:
+        lines.append(desc)
+    if params:
+        lines.append(f"叠影{level}参数: {json.dumps(params, ensure_ascii=False)}")
+    return "\n".join(lines)
+
+
+def lightcone_raw(overview_row: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
+    raw = dict(detail) if detail else {}
+    raw["overview"] = overview_row
+    return raw
+
+
 def insert_recommendations(cur: psycopg.Cursor, char_id: int, detail: dict[str, Any]) -> None:
     for rank, lightcone_id in enumerate(detail.get("lightcones") or []):
         cur.execute(
@@ -306,6 +374,8 @@ def load_lightcones(cur: psycopg.Cursor, data_dir: Path, version: str) -> int:
     loaded = 0
     for lc_id_text, row in sorted(lightcones.items(), key=lambda kv: int(kv[0])):
         lc_id = int_id(lc_id_text)
+        zh = load_lightcone_detail(data_dir, "zh", lc_id)
+        en = load_lightcone_detail(data_dir, "en", lc_id)
         cur.execute(
             """
             INSERT INTO lightcones (
@@ -327,14 +397,14 @@ def load_lightcones(cur: psycopg.Cursor, data_dir: Path, version: str) -> int:
             (
                 lc_id,
                 version,
-                rarity_from_enum(row.get("rank")),
-                row.get("baseType") or "",
-                clean_text(row.get("zh")),
-                clean_text(row.get("en")),
-                clean_text(row.get("zh_desc") or row.get("desc")),
-                clean_text(row.get("en_desc") or row.get("desc")),
-                Jsonb(row),
-                Jsonb(row),
+                rarity_from_enum(zh.get("rarity") or row.get("rank")),
+                zh.get("base_type") or row.get("baseType") or "",
+                clean_text(zh.get("name") or row.get("zh")),
+                clean_text(en.get("name") or row.get("en")),
+                build_lightcone_desc(zh) or clean_text(row.get("zh_desc") or row.get("desc")),
+                build_lightcone_desc(en) or clean_text(row.get("en_desc") or row.get("desc")),
+                Jsonb(lightcone_raw(row, zh)),
+                Jsonb(lightcone_raw(row, en)),
             ),
         )
         loaded += 1

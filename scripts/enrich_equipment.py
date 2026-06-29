@@ -5,31 +5,65 @@ import json
 import os
 import re
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import psycopg
+import httpx
 from dotenv import load_dotenv
-from psycopg.rows import dict_row
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ModuleNotFoundError:
+    psycopg = None
+    dict_row = None
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from hsr_agent.db import DEFAULT_DATABASE_URL
+from hsr_agent.llm_client import require_llm_config
 from schemas.axes_vocab import STATS, TAGS
-from schemas.equipment_axes_vocab import normalize_equipment_axes
-from scripts.load import clean_text, load_json, relic_kind
+from schemas.equipment_axes_vocab import EQUIPMENT_AXES_INPUT_SCHEMA, equipment_vocab_prompt, normalize_equipment_axes
+from scripts.load import (
+    build_lightcone_desc,
+    clean_text,
+    lightcone_refinement,
+    lightcone_refinement_params,
+    load_json,
+    load_lightcone_detail,
+    relic_kind,
+)
 
 DEFAULT_VERSION = "4.3.54"
+DEFAULT_DATABASE_URL = "postgresql://hsr:hsr@localhost:55432/hsr_agent"
 DEFAULT_RELIC_SAMPLE_IDS = [101, 102, 118, 120, 301, 312]
 DEFAULT_LIGHTCONE_SAMPLE_IDS = [21002, 23005, 24002]
+
+SYSTEM_PROMPT = """你是崩坏星穹铁道装备机制数据分析师。
+你的任务是把国服中文光锥/遗器效果文本抽取成结构化 equipment axes。
+
+硬规则:
+1. 只使用工具 schema 和受控词表里的枚举值,不要发明新的 stat/target/uptime/tag。
+2. 只基于给定中文文本和参数抽取,不要用游戏记忆补充不存在的效果。
+3. 数值统一为小数,例如 24% 写 0.24;光锥默认抽取叠影1数值,除非文本明确要求其它叠影。
+4. provides 表示装备实际提供的属性、伤害、资源、机制效果;needs 表示装备适合/要求的触发机制、角色类型或队伍环境;restricts 表示限制、阈值、不可叠加、站位、目标类型等。
+5. 目标(target)按受益者或受影响对象填写:装备者用 self,全队用 all_allies,敌人 debuff 用 one_enemy/all_enemies。
+6. 复杂触发条件原文摘要写入 condition;不确定数值可以不填 value。
+7. 「附加伤害」用 additional_dmg;只有明确写「追加攻击」才用 fua_dmg。
+8. tag 必须由文本显式机制触发:只有出现「追加攻击」才可填 fua_team;只有出现「持续伤害」才可填 dot_team;只有出现「超击破」才可填 super_break_team。
+9. 叠层上限、持续回合这类说明写入 condition/notes,不要作为 restricts 的机制效果;只有阈值、站位、目标类型、不可叠加、同命途/同属性等才写 restricts。
+10. 不确定的效果宁可少填,不要为了填满而猜。
+"""
 
 PLACEHOLDER_RE = re.compile(r"#(\d+)(?:\[[^\]]+\])?")
 VALUE_RE = re.compile(r"(-?\d+(?:\.\d+)?)(%)?")
 DEF_IGNORE_RE = re.compile(r"无视(?:其|目标)?\s*(-?\d+(?:\.\d+)?)%的防御力")
+HP_RESTORE_RE = re.compile(r"回复等同于(?:自身|装备者)?生命上限\s*(-?\d+(?:\.\d+)?)%")
 
 STAT_PATTERNS: list[tuple[str, str]] = [
     ("outgoing_heal", "治疗量"),
@@ -92,6 +126,205 @@ def select_ids(overview: dict[str, Any], requested: set[int] | None, run_all: bo
     if run_all:
         return [int(item_id) for item_id in sorted(overview, key=int)]
     return samples
+
+
+def openai_chat_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": "emit_equipment_axes",
+            "description": "Return normalized lightcone or relic-set provides/needs/restricts/tags.",
+            "parameters": EQUIPMENT_AXES_INPUT_SCHEMA,
+        },
+    }
+
+
+def lightcone_effect_text(data_dir: Path, item_id: int) -> tuple[dict[str, Any], str]:
+    detail = load_lightcone_detail(data_dir, "zh", item_id)
+    refinements = lightcone_refinement(detail)
+    if not refinements:
+        return detail, ""
+
+    lines = [
+        f"光锥名: {clean_text(detail.get('name'))}",
+        f"命途: {detail.get('base_type')}",
+        f"稀有度: {detail.get('rarity')}",
+        f"技能名: {clean_text(refinements.get('name'))}",
+        f"原始效果文本: {clean_text(refinements.get('desc'))}",
+        f"叠影1渲染文本: {build_lightcone_desc(detail, '1')}",
+    ]
+    levels = refinements.get("level") or {}
+    if isinstance(levels, dict):
+        for level in ["1", "2", "3", "4", "5"]:
+            row = levels.get(level) or {}
+            if isinstance(row, dict) and row.get("param_list") is not None:
+                lines.append(f"叠影{level}参数: {json.dumps(row.get('param_list') or [], ensure_ascii=False)}")
+    return detail, "\n".join(part for part in lines if part.strip())
+
+
+def relic_effect_text(item_id: int, row: dict[str, Any]) -> str:
+    lines = [
+        f"遗器套装名: {clean_text(row.get('zh'))}",
+        f"类型: {relic_kind(item_id, row)}",
+    ]
+    set_bonus = row.get("set") or {}
+    for bonus_key, bonus in sorted(set_bonus.items()):
+        if not isinstance(bonus, dict):
+            continue
+        desc = clean_text(bonus.get("zh"))
+        params = bonus.get("ParamList") or bonus.get("param_list") or []
+        if desc:
+            lines.append(f"{bonus_key}件套效果: {desc}")
+        if params:
+            lines.append(f"{bonus_key}件套参数: {json.dumps(params, ensure_ascii=False)}")
+    return "\n".join(part for part in lines if part.strip())
+
+
+def equipment_prompt(entity_kind: str, item_id: int, row: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], str]:
+    if entity_kind == "lightcone":
+        detail, text = lightcone_effect_text(data_dir, item_id)
+        if not text:
+            text = f"光锥名: {clean_text(row.get('zh'))}\n命途: {row.get('baseType')}\n效果文本缺失。"
+        prompt = f"""请抽取这个光锥的 equipment axes。
+
+受控词表:
+{equipment_vocab_prompt()}
+
+光锥 id: {item_id}
+
+中文光锥详情:
+{text}
+"""
+        return detail or row, prompt
+
+    text = relic_effect_text(item_id, row)
+    prompt = f"""请抽取这个遗器套装的 equipment axes。
+
+受控词表:
+{equipment_vocab_prompt()}
+
+遗器套装 id: {item_id}
+
+中文遗器套装详情:
+{text}
+"""
+    return row, prompt
+
+
+def extract_tool_arguments(body: dict[str, Any]) -> dict[str, Any]:
+    message = body["choices"][0]["message"]
+    tool_calls = message.get("tool_calls") or []
+    if not tool_calls:
+        raise RuntimeError(f"OpenAI-compatible response did not contain tool_calls: {body}")
+    arguments = tool_calls[0]["function"]["arguments"]
+    if isinstance(arguments, str):
+        return json.loads(arguments)
+    return dict(arguments)
+
+
+def sanitize_equipment_axes(axes: dict[str, Any], source_text: str) -> dict[str, Any]:
+    rules: list[tuple[list[str], set[str], set[str]]] = [
+        (["追加攻击"], {"fua_team"}, {"fua_dmg", "fua_trigger"}),
+        (["持续伤害"], {"dot_team"}, {"dot_dmg", "dot_trigger"}),
+        (["超击破"], {"super_break_team"}, {"super_break_dmg"}),
+        (["召唤物", "忆灵", "记忆灵"], {"summon_team"}, set()),
+        (["护盾"], {"shield_dependent"}, {"shield_strength", "shield_apply"}),
+        (["治疗", "回复生命", "恢复生命"], {"heal_dependent"}, {"outgoing_heal", "heal_percent", "heal_over_time"}),
+        (["生命值降低", "消耗生命", "损失生命"], {"hp_loss_team"}, set()),
+    ]
+    blocked_tags: set[str] = set()
+    blocked_stats: set[str] = set()
+    for needles, tags, stats in rules:
+        if any(needle in source_text for needle in needles):
+            continue
+        blocked_tags.update(tags)
+        blocked_stats.update(stats)
+
+    if blocked_tags:
+        axes["tags"] = [tag for tag in axes.get("tags") or [] if tag not in blocked_tags]
+    if blocked_stats:
+        for key in ["provides", "needs", "restricts"]:
+            axes[key] = [
+                item
+                for item in axes.get(key) or []
+                if not isinstance(item, dict) or item.get("stat") not in blocked_stats
+            ]
+    axes["restricts"] = [
+        item
+        for item in axes.get("restricts") or []
+        if not (
+            isinstance(item, dict)
+            and any(needle in str(item.get("condition", "")) for needle in ["最多叠加", "叠加上限", "上限"])
+            and not any(needle in str(item.get("condition", "")) for needle in ["大于等于", "至少", "不少于", "无法叠加", "同属性", "同命途"])
+        )
+    ]
+    if not any(isinstance(item, dict) and item.get("stat") == "heal_percent" for item in axes.get("provides") or []):
+        match = HP_RESTORE_RE.search(source_text)
+        if match:
+            if "施放终结技" in source_text:
+                uptime = "on_ult"
+            elif "击破" in source_text:
+                uptime = "on_break"
+            else:
+                uptime = "conditional"
+            axes.setdefault("provides", []).append(
+                {
+                    "stat": "heal_percent",
+                    "target": "self",
+                    "value": float(match.group(1)) / 100,
+                    "uptime": uptime,
+                    "condition": "回复等同于自身生命上限一定比例的生命值。",
+                    "source": "deterministic_postprocess",
+                    "confidence": 0.95,
+                }
+            )
+    return axes
+
+
+def enrich_equipment_openai(config: Any, entity_kind: str, item_id: int, row: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    payload_row, prompt = equipment_prompt(entity_kind, item_id, row, data_dir)
+    tool = tool_definition()
+    payload = {
+        "model": config.model,
+        "temperature": 0,
+        "max_tokens": 4096,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT + "\n你必须调用 emit_equipment_axes 工具,不要输出普通文本。"},
+            {"role": "user", "content": prompt},
+        ],
+        "tools": [tool],
+        "tool_choice": {"type": "function", "function": {"name": "emit_equipment_axes"}},
+    }
+    headers = {"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"}
+    response = None
+    max_attempts = 6
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with httpx.Client(timeout=180) as http:
+                response = http.post(openai_chat_url(config.base_url), headers=headers, json=payload)
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < max_attempts:
+                print(f"retry {entity_kind} {item_id} {attempt}/{max_attempts}: HTTP {response.status_code}")
+                time.sleep(5 * attempt)
+                continue
+            response.raise_for_status()
+            break
+        except httpx.TransportError as exc:
+            if attempt >= max_attempts:
+                raise
+            print(f"retry {entity_kind} {item_id} {attempt}/{max_attempts}: {type(exc).__name__}: {exc}")
+            time.sleep(5 * attempt)
+    if response is None:
+        raise RuntimeError("OpenAI-compatible request did not produce a response")
+    axes = normalize_equipment_axes(extract_tool_arguments(response.json()))
+    axes = sanitize_equipment_axes(axes, prompt)
+    return payload_row, axes
 
 
 def placeholder_value(raw_text: str, params: list[Any], start: int, fallback_index: int = 0) -> float | None:
@@ -457,6 +690,9 @@ def relic_axes(relic_id: int, row: dict[str, Any]) -> dict[str, Any]:
 
 
 def db_lightcone_inference() -> dict[int, dict[str, Any]]:
+    if psycopg is None or dict_row is None:
+        print("warning: psycopg is not installed; skip lightcone weak inference from DB")
+        return {}
     database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
     if not database_url:
         return {}
@@ -525,17 +761,18 @@ def output_payload(
     row: dict[str, Any],
     axes: dict[str, Any],
     version: str,
+    model: str = "rules-v1",
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "entity_kind": entity_kind,
         "id": item_id,
-        "name_zh": clean_text(row.get("zh")),
+        "name_zh": clean_text(row.get("name") or row.get("zh")),
         "name_en": clean_text(row.get("en")),
-        "path": row.get("baseType"),
+        "path": row.get("base_type") or row.get("baseType"),
         "kind": relic_kind(item_id, row) if entity_kind == "relic_set" else None,
         "version": version,
-        "model": "rules-v1",
+        "model": model,
         "generated_at": datetime.now(UTC).isoformat(),
         "axes": axes,
     }
@@ -556,6 +793,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--all", action="store_true", help="Process every selected equipment kind.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing enriched files.")
     parser.add_argument("--dry-run", action="store_true", help="Print outputs without writing files.")
+    parser.add_argument("--mode", choices=["rules", "llm"], default="rules", help="Use local rules or OpenAI-compatible LLM extraction.")
+    parser.add_argument("--workers", type=int, default=1, help="Concurrent LLM requests when --mode llm.")
     parser.add_argument("--no-db-infer", action="store_true", help="Do not infer lightcone weak axes from DB recommendations.")
     return parser.parse_args()
 
@@ -568,7 +807,51 @@ def main() -> int:
     requested_ids = parse_ids(args.ids)
     kinds = ["lightcone", "relic_set"] if args.kind == "all" else [args.kind]
 
-    lightcone_inference = {} if args.no_db_infer else db_lightcone_inference()
+    config = None
+    model = "rules-v1"
+    if args.mode == "llm" and not args.dry_run:
+        config = require_llm_config()
+        if config.api_format != "openai":
+            raise RuntimeError("scripts/enrich_equipment.py --mode llm currently requires LLM_API_FORMAT=openai")
+        model = config.model
+
+    lightcone_inference = {} if args.mode == "llm" or args.no_db_infer else db_lightcone_inference()
+
+    if args.mode == "llm" and not args.dry_run and args.workers > 1:
+        assert config is not None
+        tasks: list[tuple[str, int, dict[str, Any], Path]] = []
+        for kind in kinds:
+            filename = "lightcone.json" if kind == "lightcone" else "relicset.json"
+            overview = load_json(data_dir / filename)
+            samples = DEFAULT_LIGHTCONE_SAMPLE_IDS if kind == "lightcone" else DEFAULT_RELIC_SAMPLE_IDS
+            item_ids = select_ids(overview, requested_ids, args.all, samples)
+            for item_id in item_ids:
+                row = overview.get(str(item_id))
+                if row is None:
+                    raise KeyError(f"{kind} {item_id} not found in {filename}")
+                out_path = out_dir / kind / f"{item_id}.json"
+                if out_path.exists() and not args.force:
+                    print(f"skip {kind} {item_id}: {out_path.relative_to(ROOT)}")
+                    continue
+                tasks.append((kind, item_id, row, out_path))
+
+        def run_task(task: tuple[str, int, dict[str, Any], Path]) -> str:
+            kind, item_id, row, out_path = task
+            payload_row, axes = enrich_equipment_openai(config, kind, item_id, row, data_dir)
+            payload = output_payload(kind, item_id, payload_row, axes, args.version, model)
+            write_json(out_path, payload)
+            return f"wrote {out_path.relative_to(ROOT)}"
+
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
+            futures = [executor.submit(run_task, task) for task in tasks]
+            for future in as_completed(futures):
+                print(future.result())
+                completed += 1
+                print(f"progress {completed}/{len(tasks)}")
+        print(f"equipment enriched: {completed}")
+        return 0
+
     total = 0
     for kind in kinds:
         filename = "lightcone.json" if kind == "lightcone" else "relicset.json"
@@ -583,8 +866,21 @@ def main() -> int:
             if out_path.exists() and not args.force and not args.dry_run:
                 print(f"skip {kind} {item_id}: {out_path.relative_to(ROOT)}")
                 continue
-            axes = lightcone_axes(item_id, row, lightcone_inference) if kind == "lightcone" else relic_axes(item_id, row)
-            payload = output_payload(kind, item_id, row, axes, args.version)
+            payload_row = row
+            if args.mode == "llm":
+                if args.dry_run:
+                    payload_row, prompt = equipment_prompt(kind, item_id, row, data_dir)
+                    print(f"\n--- dry-run {kind} {item_id} ---")
+                    print(prompt[:4000])
+                    if len(prompt) > 4000:
+                        print(f"\n... prompt truncated; full length={len(prompt)} chars")
+                    total += 1
+                    continue
+                assert config is not None
+                payload_row, axes = enrich_equipment_openai(config, kind, item_id, row, data_dir)
+            else:
+                axes = lightcone_axes(item_id, row, lightcone_inference) if kind == "lightcone" else relic_axes(item_id, row)
+            payload = output_payload(kind, item_id, payload_row, axes, args.version, model)
             if args.dry_run:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             else:

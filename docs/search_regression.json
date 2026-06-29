@@ -1,0 +1,92 @@
+[
+  {
+    "query": "击破 超击破 流萤 队友",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["流萤", "忘归人", "开拓者", "阮•梅"]
+  },
+  {
+    "query": "同协开拓者 击破套装 防御无视",
+    "kind": "all",
+    "limit": 10,
+    "expected_any": ["开拓者", "荡除蠹灾的铁骑"]
+  },
+  {
+    "query": "击破套装 超击破 防御无视",
+    "kind": "relic_set",
+    "limit": 8,
+    "expected_any": ["荡除蠹灾的铁骑"]
+  },
+  {
+    "query": "追击队 知更鸟 追加攻击 队友",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["知更鸟", "托帕&账账", "砂金"]
+  },
+  {
+    "query": "持续伤害 dot 卡芙卡 队友",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["卡芙卡", "黑天鹅", "桑博", "桂乃芬"]
+  },
+  {
+    "query": "暴击伤害辅助 拉条 主C",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["花火", "布洛妮娅", "星期日"]
+  },
+  {
+    "query": "治疗 生存 回复 奶",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["罗刹", "藿藿", "灵砂", "加拉赫"]
+  },
+  {
+    "query": "护盾 存护 盾量",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["砂金", "杰帕德", "三月七", "开拓者"]
+  },
+  {
+    "query": "量子主C 银狼 花火",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["银狼", "花火", "希儿", "青雀"]
+  },
+  {
+    "query": "黄泉 虚无 队友 负面",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["黄泉", "佩拉", "银狼", "椒丘"]
+  },
+  {
+    "query": "流萤 光锥 击破",
+    "kind": "lightcone",
+    "limit": 10,
+    "expected_any": ["梦应归于何处", "记一位星神的陨落"]
+  },
+  {
+    "query": "风套 行动提前",
+    "kind": "relic_set",
+    "limit": 10,
+    "expected_any": ["晨昏交界的翔鹰"]
+  },
+  {
+    "query": "DOT 套装 持续伤害",
+    "kind": "relic_set",
+    "limit": 10,
+    "expected_any": ["幽锁深牢的系囚"]
+  },
+  {
+    "query": "召唤物 记忆精灵 角色",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["阿格莱雅", "开拓者"]
+  },
+  {
+    "query": "能量 回能 终结技 辅助",
+    "kind": "character",
+    "limit": 10,
+    "expected_any": ["藿藿", "停云", "星期日"]
+  }
+]
