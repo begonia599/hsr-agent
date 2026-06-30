@@ -62,6 +62,19 @@ type Event struct {
 	Args       json.RawMessage `json:"args,omitempty"`
 	Result     any             `json:"result,omitempty"`
 	Error      string          `json:"error,omitempty"`
+	LatencyMS  int64           `json:"latency_ms,omitempty"`
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
+type RunResult struct {
+	Message string `json:"message"`
+	Status  string `json:"status"`
+	Usage   Usage  `json:"usage,omitempty"`
 }
 
 func New(config Config, tools *apptools.Service) *Runner {
@@ -104,6 +117,7 @@ type chatResponse struct {
 		Message      message `json:"message"`
 		FinishReason string  `json:"finish_reason"`
 	} `json:"choices"`
+	Usage Usage `json:"usage"`
 }
 
 type toolDef struct {
@@ -118,34 +132,46 @@ type functionSpec struct {
 }
 
 func (r *Runner) Run(ctx context.Context, userMessage string) (string, error) {
-	return r.run(ctx, userMessage, nil)
+	result, err := r.RunDetailed(ctx, userMessage)
+	return result.Message, err
 }
 
 func (r *Runner) RunWithEvents(ctx context.Context, userMessage string, emit func(Event)) (string, error) {
+	result, err := r.RunWithEventsDetailed(ctx, userMessage, emit)
+	return result.Message, err
+}
+
+func (r *Runner) RunDetailed(ctx context.Context, userMessage string) (RunResult, error) {
+	return r.run(ctx, userMessage, nil)
+}
+
+func (r *Runner) RunWithEventsDetailed(ctx context.Context, userMessage string, emit func(Event)) (RunResult, error) {
 	return r.run(ctx, userMessage, emit)
 }
 
-func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) (string, error) {
+func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) (RunResult, error) {
 	if strings.TrimSpace(r.config.APIKey) == "" {
-		return "", fmt.Errorf("LLM_API_KEY is required")
+		return RunResult{}, fmt.Errorf("LLM_API_KEY is required")
 	}
 	messages := []message{
 		{Role: "system", Content: DefaultSystemPrompt + "\n" + MechanicSystemPromptAddon},
 		{Role: "user", Content: userMessage},
 	}
+	var usage Usage
 
 	for step := 0; step < 8; step++ {
 		resp, err := r.chat(ctx, messages, true)
 		if err != nil {
-			return "", err
+			return RunResult{Usage: usage}, err
 		}
+		usage.Add(resp.Usage)
 		if len(resp.Choices) == 0 {
-			return "", fmt.Errorf("LLM returned no choices")
+			return RunResult{Usage: usage}, fmt.Errorf("LLM returned no choices")
 		}
 		assistantMsg := resp.Choices[0].Message
 		messages = append(messages, assistantMsg)
 		if len(assistantMsg.ToolCalls) == 0 {
-			return assistantMsg.Content, nil
+			return RunResult{Message: assistantMsg.Content, Status: "completed", Usage: usage}, nil
 		}
 		for _, call := range assistantMsg.ToolCalls {
 			if emit != nil {
@@ -154,13 +180,15 @@ func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) 
 			if r.config.TraceWriter != nil {
 				fmt.Fprintf(r.config.TraceWriter, "tool_call name=%s args=%s\n", call.Function.Name, call.Function.Arguments)
 			}
+			toolStarted := time.Now()
 			result, err := r.dispatchTool(ctx, call.Function.Name, call.Function.Arguments)
+			latencyMS := time.Since(toolStarted).Milliseconds()
 			if err != nil {
 				result = map[string]any{"error": err.Error()}
 			}
 			result = compactToolResult(call.Function.Name, result)
 			if emit != nil {
-				event := Event{Type: "tool_result", ToolCallID: call.ID, Name: call.Function.Name, Result: result}
+				event := Event{Type: "tool_result", ToolCallID: call.ID, Name: call.Function.Name, Result: result, LatencyMS: latencyMS}
 				if row, ok := result.(map[string]any); ok {
 					if text, ok := row["error"].(string); ok {
 						event.Error = text
@@ -186,16 +214,23 @@ func (r *Runner) run(ctx context.Context, userMessage string, emit func(Event)) 
 	})
 	resp, err := r.chat(ctx, messages, false)
 	if err != nil {
-		return "", fmt.Errorf("agent reached max tool-use steps and finalization failed: %w", err)
+		return RunResult{Usage: usage, Status: "max_steps"}, fmt.Errorf("agent reached max tool-use steps and finalization failed: %w", err)
 	}
+	usage.Add(resp.Usage)
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("agent reached max tool-use steps and LLM returned no final choices")
+		return RunResult{Usage: usage, Status: "max_steps"}, fmt.Errorf("agent reached max tool-use steps and LLM returned no final choices")
 	}
 	content := strings.TrimSpace(resp.Choices[0].Message.Content)
 	if content == "" {
-		return "", fmt.Errorf("agent reached max tool-use steps and LLM returned empty final answer")
+		return RunResult{Usage: usage, Status: "max_steps"}, fmt.Errorf("agent reached max tool-use steps and LLM returned empty final answer")
 	}
-	return content, nil
+	return RunResult{Message: content, Status: "max_steps", Usage: usage}, nil
+}
+
+func (u *Usage) Add(other Usage) {
+	u.PromptTokens += other.PromptTokens
+	u.CompletionTokens += other.CompletionTokens
+	u.TotalTokens += other.TotalTokens
 }
 
 func safeRawJSON(text string) json.RawMessage {

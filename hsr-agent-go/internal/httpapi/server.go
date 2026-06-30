@@ -41,7 +41,13 @@ type apiError struct {
 }
 
 type chatRequest struct {
-	Message string `json:"message"`
+	Message        string `json:"message"`
+	ConversationID int64  `json:"conversation_id,omitempty"`
+	SessionID      string `json:"session_id,omitempty"`
+}
+
+type updateConversationRequest struct {
+	Title string `json:"title"`
 }
 
 type resolveEntitiesRequest struct {
@@ -130,6 +136,10 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleAssets(w, r, parts[1:])
 	case "entities":
 		s.handleEntities(w, r, parts[1:])
+	case "conversations":
+		s.handleConversations(w, r, parts[1:])
+	case "turns":
+		s.handleTurns(w, r, parts[1:])
 	default:
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "unknown API route")
 	}
@@ -455,6 +465,76 @@ func (s *Server) handleEntities(w http.ResponseWriter, r *http.Request, parts []
 	writeResult(w, rows, err)
 }
 
+func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, parts []string) {
+	if s.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "DB_UNAVAILABLE", "database is not configured")
+		return
+	}
+	if len(parts) == 0 {
+		if !allowMethod(w, r, http.MethodGet) {
+			return
+		}
+		rows, err := s.listConversations(r.Context(), r.URL.Query().Get("session_id"), queryInt(r, "limit", 20), queryInt(r, "offset", 0))
+		writeResult(w, rows, err)
+		return
+	}
+	id, ok := parsePositiveInt64(parts[0])
+	if !ok {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "conversation id must be an integer")
+		return
+	}
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			row, err := s.getConversation(r.Context(), id)
+			writeResult(w, row, err)
+		case http.MethodPatch:
+			var req updateConversationRequest
+			if !decodeJSON(w, r, &req) {
+				return
+			}
+			err := s.updateConversationTitle(r.Context(), id, req.Title)
+			writeResult(w, map[string]any{"id": id, "title": strings.TrimSpace(req.Title)}, err)
+		case http.MethodDelete:
+			err := s.deleteConversation(r.Context(), id)
+			writeResult(w, map[string]any{"deleted": true}, err)
+		default:
+			allowMethod(w, r, http.MethodGet, http.MethodPatch, http.MethodDelete)
+		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "turns" {
+		if !allowMethod(w, r, http.MethodGet) {
+			return
+		}
+		rows, err := s.conversationTurns(r.Context(), id)
+		writeResult(w, rows, err)
+		return
+	}
+	writeError(w, http.StatusNotFound, "NOT_FOUND", "unknown conversation route")
+}
+
+func (s *Server) handleTurns(w http.ResponseWriter, r *http.Request, parts []string) {
+	if s.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "DB_UNAVAILABLE", "database is not configured")
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "turn route is required")
+		return
+	}
+	if !allowMethod(w, r, http.MethodGet) {
+		return
+	}
+	traceID := strings.TrimSpace(parts[0])
+	if traceID == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "trace_id is required")
+		return
+	}
+	row, err := s.getTurn(r.Context(), traceID)
+	writeResult(w, row, err)
+}
+
 func (s *Server) handleCharacters(w http.ResponseWriter, r *http.Request, parts []string) {
 	if !s.requireTools(w) {
 		return
@@ -664,9 +744,25 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 		defer cancel()
+		started := time.Now()
+		conversationID, turnID := s.prepareAgentPersistence(ctx, req, traceID)
+		collector := newToolTraceCollector()
 		runner := agent.New(agent.Config{BaseURL: s.cfg.LLMBaseURL, APIKey: s.cfg.LLMAPIKey, Model: s.cfg.LLMModel}, s.tools)
-		answer, err := runner.Run(ctx, req.Message)
-		writeResult(w, map[string]any{"message": answer, "trace_id": traceID}, err)
+		result, err := runner.RunWithEventsDetailed(ctx, req.Message, collector.Add)
+		status := result.Status
+		if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+			status = "aborted"
+		}
+		if turnID > 0 {
+			persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = s.finishAgentTurn(persistCtx, turnID, conversationID, result, status, err, started, collector.Calls())
+			persistCancel()
+		}
+		body := map[string]any{"message": result.Message, "trace_id": traceID}
+		if conversationID > 0 {
+			body["conversation_id"] = conversationID
+		}
+		writeResult(w, body, err)
 	case "chat/stream":
 		if !allowMethod(w, r, http.MethodPost) {
 			return
@@ -688,6 +784,8 @@ func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "message is required")
 		return
 	}
+	started := time.Now()
+	conversationID, turnID := s.prepareAgentPersistence(r.Context(), req, traceID)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "STREAM_UNSUPPORTED", "response writer does not support streaming")
@@ -699,24 +797,65 @@ func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	writeSSE(w, "status", map[string]any{"message": "started", "trace_id": traceID})
+	statusEvent := map[string]any{"message": "started", "trace_id": traceID}
+	if conversationID > 0 {
+		statusEvent["conversation_id"] = conversationID
+	}
+	writeSSE(w, "status", statusEvent)
 	flusher.Flush()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
+	collector := newToolTraceCollector()
 	runner := agent.New(agent.Config{BaseURL: s.cfg.LLMBaseURL, APIKey: s.cfg.LLMAPIKey, Model: s.cfg.LLMModel}, s.tools)
-	answer, err := runner.RunWithEvents(ctx, req.Message, func(event agent.Event) {
+	result, err := runner.RunWithEventsDetailed(ctx, req.Message, func(event agent.Event) {
 		event.TraceID = traceID
+		collector.Add(event)
 		writeSSE(w, event.Type, event)
 		flusher.Flush()
 	})
+	status := result.Status
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		status = "aborted"
+	}
+	if turnID > 0 {
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = s.finishAgentTurn(persistCtx, turnID, conversationID, result, status, err, started, collector.Calls())
+		persistCancel()
+	}
 	if err != nil {
-		writeSSE(w, "error", map[string]any{"code": "LLM_UPSTREAM_ERROR", "message": err.Error(), "trace_id": traceID})
+		errorEvent := map[string]any{"code": "LLM_UPSTREAM_ERROR", "message": err.Error(), "trace_id": traceID}
+		if conversationID > 0 {
+			errorEvent["conversation_id"] = conversationID
+		}
+		writeSSE(w, "error", errorEvent)
 		flusher.Flush()
 		return
 	}
-	writeSSE(w, "final", map[string]any{"message": answer, "trace_id": traceID})
+	finalEvent := map[string]any{"message": result.Message, "trace_id": traceID}
+	if conversationID > 0 {
+		finalEvent["conversation_id"] = conversationID
+	}
+	writeSSE(w, "final", finalEvent)
 	flusher.Flush()
+}
+
+func (s *Server) prepareAgentPersistence(ctx context.Context, req chatRequest, traceID string) (int64, int64) {
+	if s.db == nil {
+		return 0, 0
+	}
+	persistCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	conversationID, err := s.ensureConversation(persistCtx, req.ConversationID, req.SessionID, req.Message)
+	if err != nil || conversationID <= 0 {
+		return 0, 0
+	}
+	_, _ = s.insertMessage(persistCtx, conversationID, "user", req.Message, nil)
+	turnID, err := s.startAgentTurn(persistCtx, conversationID, traceID, s.cfg.LLMModel)
+	if err != nil {
+		return conversationID, 0
+	}
+	return conversationID, turnID
 }
 
 func (s *Server) handleMechanics(w http.ResponseWriter, r *http.Request, parts []string) {
@@ -1063,6 +1202,11 @@ func queryIntCSV(r *http.Request, key string) []int {
 
 func parsePositiveInt(text string) (int, bool) {
 	value, err := strconv.Atoi(text)
+	return value, err == nil && value > 0
+}
+
+func parsePositiveInt64(text string) (int64, bool) {
+	value, err := strconv.ParseInt(text, 10, 64)
 	return value, err == nil && value > 0
 }
 

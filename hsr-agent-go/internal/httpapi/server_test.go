@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"hsr-agent-go/internal/agent"
 	"hsr-agent-go/internal/config"
 )
 
@@ -104,6 +106,52 @@ func TestNewTraceID(t *testing.T) {
 	}
 	if first == second {
 		t.Fatalf("trace ids should differ, both were %q", first)
+	}
+}
+
+func TestToolTraceCollectorMergesCallAndResult(t *testing.T) {
+	collector := newToolTraceCollector()
+	collector.Add(agent.Event{
+		Type:       "tool_call",
+		ToolCallID: "call_1",
+		Name:       "get_character",
+		Args:       json.RawMessage(`{"query":"花火"}`),
+	})
+	collector.Add(agent.Event{
+		Type:       "tool_result",
+		ToolCallID: "call_1",
+		Name:       "get_character",
+		Result:     map[string]any{"id": 1306, "name_zh": "花火"},
+		LatencyMS:  17,
+	})
+
+	calls := collector.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("len = %d, want 1", len(calls))
+	}
+	if calls[0].Seq != 0 || calls[0].ToolCallID != "call_1" || calls[0].Name != "get_character" {
+		t.Fatalf("unexpected call identity: %#v", calls[0])
+	}
+	if calls[0].LatencyMS != 17 {
+		t.Fatalf("latency = %d, want 17", calls[0].LatencyMS)
+	}
+	if !strings.Contains(string(calls[0].Args), "花火") || !strings.Contains(string(calls[0].Result), "1306") {
+		t.Fatalf("args/result not preserved: args=%s result=%s", calls[0].Args, calls[0].Result)
+	}
+}
+
+func TestConversationHistoryRequiresDB(t *testing.T) {
+	server := New(config.Config{}, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusServiceUnavailable, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "DB_UNAVAILABLE") {
+		t.Fatalf("missing DB_UNAVAILABLE error: %s", res.Body.String())
 	}
 }
 
