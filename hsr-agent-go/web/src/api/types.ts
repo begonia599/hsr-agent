@@ -174,7 +174,7 @@ export interface CharacterSkills {
 // SSE 事件 —— 对齐 agent.Event + server.go writeSSE。
 export type ChatEvent =
   | { kind: 'status'; message: string }
-  | { kind: 'tool_call'; name: string; args: unknown }
-  | { kind: 'tool_result'; name: string; result: unknown }
+  | { kind: 'tool_call'; name: string; args: unknown; toolCallId?: string }
+  | { kind: 'tool_result'; name: string; result: unknown; toolCallId?: string }
   | { kind: 'final'; message: string }
   | { kind: 'error'; code: string; message: string }

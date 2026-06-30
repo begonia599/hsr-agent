@@ -101,9 +101,19 @@ function parseFrame(frame: string): ChatEvent | null {
     case 'status':
       return { kind: 'status', message: String(data.message ?? '') }
     case 'tool_call':
-      return { kind: 'tool_call', name: String(data.name ?? ''), args: data.args }
+      return {
+        kind: 'tool_call',
+        name: String(data.name ?? ''),
+        args: data.args,
+        toolCallId: data.tool_call_id ? String(data.tool_call_id) : undefined,
+      }
     case 'tool_result':
-      return { kind: 'tool_result', name: String(data.name ?? ''), result: data.result }
+      return {
+        kind: 'tool_result',
+        name: String(data.name ?? ''),
+        result: data.result,
+        toolCallId: data.tool_call_id ? String(data.tool_call_id) : undefined,
+      }
     case 'final':
       return { kind: 'final', message: String(data.message ?? '') }
     case 'error':

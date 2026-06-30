@@ -1,88 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
-import { streamChat, type ChatStreamHandle } from '@/api/chatStream'
-import type { ChatEvent } from '@/api/types'
-import { MessageBubble, type ChatMessage } from './MessageBubble'
+import { useEffect, useRef } from 'react'
+import { useChat } from '@/state/ChatContext'
+import { MessageBubble } from './MessageBubble'
 import { ChatInput } from './ChatInput'
-import type { ToolStep } from './ToolTrace'
-
-let counter = 0
-const nextId = () => `m${++counter}`
 
 export function ChatView() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [busy, setBusy] = useState(false)
-  const streamRef = useRef<ChatStreamHandle | null>(null)
+  const { messages, busy, send, stop } = useChat()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  const send = (text: string) => {
-    if (busy) return
-    const userMsg: ChatMessage = { id: nextId(), role: 'user', content: text }
-    const assistantId = nextId()
-    const assistantMsg: ChatMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      steps: [],
-      streaming: true,
-    }
-    setMessages((prev) => [...prev, userMsg, assistantMsg])
-    setBusy(true)
-
-    const patch = (fn: (m: ChatMessage) => ChatMessage) =>
-      setMessages((prev) => prev.map((m) => (m.id === assistantId ? fn(m) : m)))
-
-    const onEvent = (event: ChatEvent) => {
-      switch (event.kind) {
-        case 'status':
-          break
-        case 'tool_call':
-          patch((m) => ({
-            ...m,
-            steps: [...(m.steps ?? []), { name: event.name, args: event.args } as ToolStep],
-          }))
-          break
-        case 'tool_result':
-          patch((m) => {
-            const steps = [...(m.steps ?? [])]
-            // 把 result 回填到最近一个同名、还没有 result 的 step
-            for (let i = steps.length - 1; i >= 0; i--) {
-              if (steps[i].name === event.name && steps[i].result === undefined) {
-                steps[i] = { ...steps[i], result: event.result }
-                break
-              }
-            }
-            return { ...m, steps }
-          })
-          break
-        case 'final':
-          patch((m) => ({ ...m, content: event.message, streaming: false }))
-          break
-        case 'error':
-          patch((m) => ({
-            ...m,
-            error: `${event.message}（${event.code}）`,
-            streaming: false,
-          }))
-          break
-      }
-    }
-
-    streamRef.current = streamChat(text, onEvent, () => {
-      patch((m) => ({ ...m, streaming: false }))
-      setBusy(false)
-      streamRef.current = null
-    })
-  }
-
-  const stop = () => {
-    streamRef.current?.abort()
-    streamRef.current = null
-    setBusy(false)
-  }
 
   const empty = messages.length === 0
 
