@@ -56,36 +56,39 @@ type resolveEntitiesRequest struct {
 }
 
 type mechanicRequest struct {
-	AttackerID           int     `json:"attacker_id"`
-	SupportID            int     `json:"support_id"`
-	SupportIDs           []int   `json:"support_ids"`
-	CharID               int     `json:"char_id"`
-	AttackTag            string  `json:"attack_tag"`
-	IncludeEidolons      bool    `json:"include_eidolons"`
-	Eidolons             []int   `json:"eidolons"`
-	Element              string  `json:"element"`
-	EnemyCount           int     `json:"enemy_count"`
-	BreakEffect          float64 `json:"break_effect"`
-	BreakDamageBonus     float64 `json:"break_dmg_bonus"`
-	SuperBreakBonus      float64 `json:"super_break_dmg_bonus"`
-	ToughnessReduction   float64 `json:"toughness_reduction"`
-	MaxToughness         float64 `json:"max_toughness"`
-	SuperBreakMultiplier float64 `json:"super_break_multiplier"`
-	EnemyResistance      float64 `json:"enemy_resistance"`
-	DefReduction         float64 `json:"def_reduction"`
-	DefIgnore            float64 `json:"def_ignore"`
-	ResReduction         float64 `json:"res_reduction"`
-	ResPen               float64 `json:"res_pen"`
-	Vulnerability        float64 `json:"vulnerability"`
-	DamageReduction      float64 `json:"damage_reduction"`
-	ScalingStat          string  `json:"scaling_stat"`
-	BaseScalingStat      float64 `json:"base_scaling_stat"`
-	AbilityMultiplier    float64 `json:"ability_multiplier"`
-	FlatValue            float64 `json:"flat_value"`
-	DurationTurns        float64 `json:"duration_turns"`
-	CooldownTurns        float64 `json:"cooldown_turns"`
-	CycleTurns           float64 `json:"cycle_turns"`
-	StartDelayTurns      float64 `json:"start_delay_turns"`
+	AttackerID               int      `json:"attacker_id"`
+	SupportID                int      `json:"support_id"`
+	SupportIDs               []int    `json:"support_ids"`
+	CharID                   int      `json:"char_id"`
+	AttackTag                string   `json:"attack_tag"`
+	IncludeEidolons          bool     `json:"include_eidolons"`
+	Eidolons                 []int    `json:"eidolons"`
+	ActiveContexts           []string `json:"active_contexts"`
+	InactiveContexts         []string `json:"inactive_contexts"`
+	Element                  string   `json:"element"`
+	EnemyCount               int      `json:"enemy_count"`
+	BreakEffect              float64  `json:"break_effect"`
+	BreakDamageBonus         float64  `json:"break_dmg_bonus"`
+	SuperBreakBonus          float64  `json:"super_break_dmg_bonus"`
+	ToughnessReduction       float64  `json:"toughness_reduction"`
+	MaxToughness             float64  `json:"max_toughness"`
+	SuperBreakBaseMultiplier float64  `json:"super_break_base_multiplier"`
+	SuperBreakMultiplier     float64  `json:"super_break_multiplier"`
+	EnemyResistance          float64  `json:"enemy_resistance"`
+	DefReduction             float64  `json:"def_reduction"`
+	DefIgnore                float64  `json:"def_ignore"`
+	ResReduction             float64  `json:"res_reduction"`
+	ResPen                   float64  `json:"res_pen"`
+	Vulnerability            float64  `json:"vulnerability"`
+	DamageReduction          float64  `json:"damage_reduction"`
+	ScalingStat              string   `json:"scaling_stat"`
+	BaseScalingStat          float64  `json:"base_scaling_stat"`
+	AbilityMultiplier        float64  `json:"ability_multiplier"`
+	FlatValue                float64  `json:"flat_value"`
+	DurationTurns            float64  `json:"duration_turns"`
+	CooldownTurns            float64  `json:"cooldown_turns"`
+	CycleTurns               float64  `json:"cycle_turns"`
+	StartDelayTurns          float64  `json:"start_delay_turns"`
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, toolService *tools.Service) *Server {
@@ -870,7 +873,7 @@ func (s *Server) handleMechanics(w http.ResponseWriter, r *http.Request, parts [
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	options := tools.NewModifierOptions(req.IncludeEidolons, req.Eidolons)
+	options := tools.NewModifierOptionsWithContexts(req.IncludeEidolons, req.Eidolons, req.ActiveContexts, req.InactiveContexts)
 	switch parts[0] {
 	case "compare-character-fit":
 		if req.AttackerID == 0 || req.SupportID == 0 {
@@ -1233,30 +1236,40 @@ func breakScenario(req mechanicRequest, superBreak bool) calc.BreakScenario {
 	if toughnessReduction == 0 {
 		toughnessReduction = 30
 	}
+	superBreakBaseMultiplier := req.SuperBreakBaseMultiplier
 	superBreakMultiplier := req.SuperBreakMultiplier
-	if superBreak && superBreakMultiplier == 0 {
-		superBreakMultiplier = 1
+	if superBreak {
+		if superBreakBaseMultiplier == 0 {
+			superBreakBaseMultiplier = superBreakMultiplier
+		}
+		if superBreakBaseMultiplier == 0 {
+			superBreakBaseMultiplier = 1
+		}
+		if superBreakMultiplier == 0 {
+			superBreakMultiplier = superBreakBaseMultiplier
+		}
 	}
 	resistance := req.EnemyResistance
 	if resistance == 0 {
 		resistance = 0.2
 	}
 	return calc.BreakScenario{
-		ElementKey:           req.Element,
-		EnemyCount:           enemyCount,
-		BreakEffect:          req.BreakEffect,
-		BreakDamageBonus:     req.BreakDamageBonus,
-		SuperBreakBonus:      req.SuperBreakBonus,
-		ToughnessReduction:   toughnessReduction,
-		MaxToughness:         maxToughness,
-		SuperBreakMultiplier: superBreakMultiplier,
-		Resistance:           resistance,
-		DefReduction:         req.DefReduction,
-		DefIgnore:            req.DefIgnore,
-		ResReduction:         req.ResReduction,
-		ResPen:               req.ResPen,
-		Vulnerability:        req.Vulnerability,
-		DamageReduction:      req.DamageReduction,
+		ElementKey:               req.Element,
+		EnemyCount:               enemyCount,
+		BreakEffect:              req.BreakEffect,
+		BreakDamageBonus:         req.BreakDamageBonus,
+		SuperBreakBonus:          req.SuperBreakBonus,
+		ToughnessReduction:       toughnessReduction,
+		MaxToughness:             maxToughness,
+		SuperBreakBaseMultiplier: superBreakBaseMultiplier,
+		SuperBreakMultiplier:     superBreakMultiplier,
+		Resistance:               resistance,
+		DefReduction:             req.DefReduction,
+		DefIgnore:                req.DefIgnore,
+		ResReduction:             req.ResReduction,
+		ResPen:                   req.ResPen,
+		Vulnerability:            req.Vulnerability,
+		DamageReduction:          req.DamageReduction,
 	}
 }
 

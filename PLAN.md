@@ -893,7 +893,7 @@ CREATE TABLE character_modifiers (
   - `explain_modifier_sources(char_id)`
   - `estimate_dot_damage(attacker_id, support_ids)`
   - `estimate_break_damage(attacker_id, support_ids, element, break_effect, max_toughness)`
-  - `estimate_super_break_damage(attacker_id, support_ids, toughness_reduction, super_break_multiplier)`
+  - `estimate_super_break_damage(attacker_id, support_ids, toughness_reduction, super_break_base_multiplier)`
   - `estimate_healing(char_id, support_ids, scaling_stat, ability_multiplier, flat_value)`
   - `estimate_shield(char_id, support_ids, scaling_stat, ability_multiplier, flat_value)`
   - `estimate_uptime(duration_turns, cooldown_turns, cycle_turns)`
@@ -1120,48 +1120,51 @@ CREATE TABLE character_modifiers (
 
 **后端交付**:
 
-- [ ] 新增 migration `006_persistence_audit.sql`,不要使用旧文档里的 `003_persistence.sql` 编号。
-- [ ] 新增会话表:
+- [x] 新增 migration `006_persistence_audit.sql`,不要使用旧文档里的 `003_persistence.sql` 编号。
+- [x] 新增会话表:
   - `conversations`:会话、匿名 `session_id`、标题、更新时间、meta。
   - `messages`:用户/助手消息正文,assistant 消息关联 `turn_id`。
-- [ ] 新增 Agent 溯源表:
+- [x] 新增 Agent 溯源表:
   - `agent_turns`:一次用户提问,包含 `trace_id`、`conversation_id`、`model`、`status`、`latency_ms`、`tool_call_count`、可选 token usage、错误信息。
   - `agent_tool_calls`:按 seq 记录工具名、参数、结果、错误、耗时。
-- [ ] `POST /api/agent/chat` 与 `/api/agent/chat/stream` 请求体新增可选 `conversation_id`、`session_id`;旧 `{message}` 调用保持可用,不传时自动创建会话。
-- [ ] 非流式响应和 SSE `status/final/error` 事件回传 `conversation_id` + `trace_id`;SSE `tool_call/tool_result` 继续带 `trace_id/tool_call_id`。
-- [ ] 新增查询接口:
-  - `GET /api/conversations?session_id=&limit=&offset=`
-  - `GET /api/conversations/{id}`
-  - `PATCH /api/conversations/{id}` 修改标题
-  - `DELETE /api/conversations/{id}` 级联删除消息和 trace
-  - `GET /api/conversations/{id}/turns`
-  - `GET /api/turns/{trace_id}`
-- [ ] `agent.chat` 解析 OpenAI-compatible `usage.prompt_tokens/completion_tokens/total_tokens`;上游不返回 usage 时字段留空,不阻断。
-- [ ] 采集工具调用耗时:优先在 `agent.Event` 增加 `latency_ms`,由 `dispatchTool` 前后计时。
-- [ ] 落库失败不得影响用户拿到回答;SSE 先正常推送,turn 结束后批量写入或低阻塞写入。
-- [ ] 入库前只存 compact 后的 tool result,不存 LLM API key/base_url,不存完整 raw prompt。
+- [x] `POST /api/agent/chat` 与 `/api/agent/chat/stream` 请求体新增可选 `conversation_id`、`session_id`;旧 `{message}` 调用保持可用,不传时自动创建会话。
+- [x] 非流式响应和 SSE `status/final/error` 事件回传 `conversation_id` + `trace_id`;SSE `tool_call/tool_result` 继续带 `trace_id/tool_call_id`。
+- [x] 新增查询接口:
+  - [x] `GET /api/conversations?session_id=&limit=&offset=`
+  - [x] `GET /api/conversations/{id}`
+  - [x] `PATCH /api/conversations/{id}` 修改标题
+  - [x] `DELETE /api/conversations/{id}` 级联删除消息和 trace
+  - [x] `GET /api/conversations/{id}/turns`
+  - [x] `GET /api/turns/{trace_id}`
+- [x] `agent.chat` 解析 OpenAI-compatible `usage.prompt_tokens/completion_tokens/total_tokens`;上游不返回 usage 时字段留空,不阻断。
+- [x] 采集工具调用耗时:优先在 `agent.Event` 增加 `latency_ms`,由 `dispatchTool` 前后计时。
+- [x] 落库失败不得影响用户拿到回答;SSE 先正常推送,turn 结束后批量写入或低阻塞写入。
+- [x] 入库前只存 compact 后的 tool result,不存 LLM API key/base_url,不存完整 raw prompt。
 
 **验收标准**:
 
-- [ ] 一次流式问答后,`conversations/messages/agent_turns/agent_tool_calls` 关联完整。
-- [ ] `GET /api/conversations/{id}` 能返回按时间排序的 user/assistant messages。
-- [ ] `GET /api/turns/{trace_id}` 返回与实时 SSE 一致的工具调用链,包含 args/result/error/latency/seq。
-- [ ] 正常完成、LLM 错误、前端断开、达到工具步数上限分别能记录 `completed/error/aborted/max_steps`。
-- [ ] 任意接口/日志/DB 不出现 LLM API key。
-- [ ] 新增至少 1 个持久化写入测试 + 1 个 trace 查询 handler 测试;`go test ./...` 通过。
+- [x] 一次流式问答后,`conversations/messages/agent_turns/agent_tool_calls` 关联完整。
+- [x] `GET /api/conversations/{id}` 能返回按时间排序的 user/assistant messages。
+- [x] `GET /api/turns/{trace_id}` 返回与实时 SSE 一致的工具调用链,包含 args/result/error/latency/seq。
+- [x] 正常完成、LLM 错误、前端断开、达到工具步数上限分别能记录 `completed/error/aborted/max_steps`。
+- [x] 任意接口/日志/DB 不出现 LLM API key。
+- [x] 新增至少 1 个持久化/trace collector 测试 + 1 个 history handler 测试;`go test ./...` 通过。
 
 ### M8 — 机制模型 v2:敌方 debuff、施放者面板、条件语义(2-4 天)
 
 **目标**:补齐当前局部工具的主要盲区,让 agent 不再把"敌方减防/减抗"误判为未命中攻击者的 buff,也能处理"按施放者属性转化"这类效果。
 
+**当前状态**:M8 前半已完成:Go 侧按 `target_scope/stat_key/modifier_zone` 推断 `effect_side`,常规直伤/DoT/击破/超击破估算允许敌方 debuff 进入乘区,并在结果中返回 `applied_by_side/skipped_by_side`。场景激活/来源互斥也已接入:默认启用 `passive/field_active/skill_active/ult_active/conditional/on_attack`,不默认启用 `technique/combat_start/on_break/on_wave_start/instant`;前端/Agent/CLI 可传 `active_contexts` / `inactive_contexts` 显式开关。`stack_rule=none` 的同类效果会去重,本地 smoke 已验证忘归人战技狐祈 23% 减防与秘技 23% 减防不会重复叠加。
+
 **后端改造**:
 
-- [ ] 明确 modifier 作用侧:`ally_buff` / `enemy_debuff` / `field_effect` / `utility`。
-- [ ] 让 `one_enemy/all_enemies` 的减防、减抗、易伤进入伤害公式。
+- [x] 明确 modifier 作用侧:`ally_buff` / `enemy_debuff` / `field_effect` / `utility`。
+- [x] 让 `one_enemy/all_enemies` 的减防、减抗、易伤进入伤害公式。
 - [ ] 增加 `source_stat_dependency` 表达方式,支持"等同于施放者击破特攻的 15%"。
 - [ ] 增加手动场景输入:`attacker_panel`、`support_panels`、`enemy_state`。
 - [ ] 统一条件解析:`enemy_count`、阈值、叠层、持续回合、攻击标签、目标元素。
-- [ ] 把"转化为 N% 超击破"从临时归一化升级为明确 stat,例如 `super_break_base_multiplier`。
+- [x] 增加场景激活/来源互斥:`technique`、`skill_active`、`ult_active`、`combat_start`、`on_break` 等效果不能默认同时全开。
+- [x] 把"转化为 N% 超击破"从临时归一化升级为明确 stat,例如 `super_break_base_multiplier`。
 - [ ] 为高风险角色建立人工 reviewed 流程:流萤、忘归人、同谐开拓者、阮梅、银狼、知更鸟、灵砂、加拉赫。
 
 **优先校验 case**:
@@ -1173,10 +1176,47 @@ CREATE TABLE character_modifiers (
 
 **验收标准**:
 
-- [ ] `estimate_super_break_damage` 可以显式列出 ally buffs 与 enemy debuffs 分别进入了哪些乘区。
-- [ ] 忘归人 23% 减防能进入流萤超击破估算,并在结果中解释为敌方 debuff。
+- [x] `estimate_super_break_damage` 可以显式列出 ally buffs 与 enemy debuffs 分别进入了哪些乘区。
+- [x] 忘归人 23% 减防能进入流萤超击破估算,并在结果中解释为敌方 debuff。
+- [x] 忘归人的秘技减防与战技狐祈减防不会在默认场景里重复叠加;需要由场景参数显式开启对应来源。
 - [ ] 同谐主 E4 不再固定写死 15%,而是可由开拓者面板输入或默认面板推导。
 - [ ] 高风险角色的关键 modifier 至少有人工 reviewed 标记或测试 fixture 覆盖。
+
+### M8.8 — 公式与倍率对齐:成熟机制先补齐(1-3 天)
+
+**目标**:在进入 M9 行动轴前,先把当前能稳定建模的公式和倍率链路补齐,避免行动轴建立在错误乘区上。此阶段不追求完整覆盖记忆/欢愉新体系,它们后置到 M12 做专项验证。
+
+**参考优先级**:
+
+1. **Nanoka / PG raw**:技能文本、`param_list`、星魂、光锥、遗器参数事实源。
+2. **Fandom Damage + 子页面**:主公式和乘区定义索引,包括 Damage、Break、Super Break、True DMG、Elation DMG 等页面。
+3. **KQM**:记忆/忆灵机制细节先作为后续 M12 参考,本阶段只记录缺口。
+4. **THCHelper**:普通/击破/超击破/欢愉公式边界交叉参考,不复用代码,不作为唯一权威。
+5. **官服 fixture**:最终验收依据;私服/模拟服最多辅助猜测,不能作为真值源。
+
+**本阶段覆盖**:
+
+- [ ] 对齐常规直伤公式:基础倍率、暴击、增伤、防御、抗性、易伤、减伤、破韧状态。
+- [ ] 对齐 DoT / 附加伤害:不吃暴击的边界、触发型附加伤害、普通增伤/易伤/防御/抗性适用范围。
+- [ ] 对齐击破公式:等级倍率、元素倍率、韧性上限、击破特攻、击破伤害、减防/抗性/易伤/减伤。
+- [ ] 对齐超击破公式:削韧值、弱点击破效率、削韧提高、超击破基础倍率、击破/超击破增伤、减防/抗性/易伤。
+- [x] 把 `super_break_dmg_bonus` 中"转化为 N% 超击破"升级成明确字段,如 `super_break_base_multiplier`。
+- [ ] 补 `source_stat_dependency`:支持同谐主 E4、花火暴伤等"按施放者面板转化"效果。
+- [ ] 增加手动面板输入:`attacker_panel`、`support_panels`、`enemy_state`,优先服务 M8 公式工具,不是行动轴模拟。
+- [ ] 建立高风险 fixture:流萤、忘归人、同谐开拓者、阮梅、银狼、灵砂、加拉赫。
+
+**暂不纳入本阶段**:
+
+- [ ] 记忆/忆灵/真伤完整验证,后置 M12。
+- [ ] 欢愉/Elation 完整验证,后置 M12。
+- [ ] 行动轴、覆盖率、SP/能量循环,属于 M9。
+
+**验收标准**:
+
+- [ ] Fandom Damage 中成熟乘区在我们的 `calc` 字段里都有明确映射或明确 `unsupported` 记录。
+- [x] `estimate_super_break_damage` 不再依赖临时的 125% -> +25% 兼容逻辑,而是使用明确基础倍率字段。
+- [ ] 同谐主 E4 可以用默认/手动开拓者面板推导,不再写死 15%。
+- [ ] 至少 5 个高风险 fixture 的关键乘区输出稳定,`go test ./...` 覆盖。
 
 ### M9 — 队伍/行动轴模拟 v1(4-7 天)
 
@@ -1262,6 +1302,98 @@ CREATE TABLE character_modifiers (
 - `mechanic_result.baseline/with_modifiers/total_multiplier/applied/skipped/assumptions/caveats`
 - `agent_event.type/text/tool_name/tool_args/tool_summary/trace_id`
 - `simulation.timeline/events/contributions/resources/assumptions/caveats`
+
+### M12 — 记忆/欢愉新机制专项验证(后置)
+
+**目标**:在 M9 行动轴和主线机制稳定后,专项补齐 3.x/4.x 新体系:记忆/忆灵/真伤与欢愉/Elation。此阶段不阻塞 M9,但完成后可反向提升行动轴模拟的覆盖范围。
+
+**参考优先级**:
+
+- **Nanoka / PG raw**:记忆角色、忆灵技能、欢愉角色、相关光锥/遗器的文本与参数。
+- **Fandom Damage / True DMG / Elation DMG / Punchline**:新机制公式入口与术语定义。
+- **KQM Memosprite Mechanics**:忆灵独立实体、面板继承、buff 持续和伤害归属。
+- **中文 TC 与官服实测**:欢愉公式成熟度低,必须用实测 fixture 交叉验证。
+- **THCHelper Elation 分支**:只做辅助参考,不当权威;它未覆盖记忆/真伤。
+
+**后端交付**:
+
+- [ ] 新增 `true_damage` 计算工具:支持"按原伤害百分比追加真伤"和"固定/倍率真伤"两类最小模型。
+- [ ] 新增 `memosprite_damage` / `memosprite_state` 表达:忆灵独立面板、速度/行动、buff 持续、伤害归属。
+- [ ] 新增 `elation_damage` 计算工具:按 Fandom/TC 公式拆出等级基础值、Elation、Punchline、Merrymake、防御、抗性、易伤、减伤等字段。
+- [ ] 扩展 modifier stat vocabulary: `true_dmg`, `true_dmg_from_original`, `memosprite_dmg_bonus`, `elation`, `punchline`, `merrymake` 等。
+- [ ] 为记忆/欢愉角色建立 reviewed fixture,至少覆盖一个记忆核心、一个忆灵伤害样本、一个真伤追加样本、一个欢愉伤害样本。
+
+**验收标准**:
+
+- [ ] Agent 回答记忆角色配队/收益时能区分"召唤物/忆灵伤害"、"真伤追加"和普通伤害。
+- [ ] Agent 回答欢愉角色收益时能调用 `estimate_elation_damage`,不会把欢愉伤害误当普通直伤或超击破。
+- [ ] 所有新机制结论必须带 `assumptions/caveats` 和 fixture 来源说明。
+- [ ] 未完成 reviewed 的新机制默认降级为"待校验估算",不能输出强确定性结论。
+
+### M13 — 用户反馈记忆 + 答案质量闭环(最后阶段)
+
+**目标**:把用户对 Agent 回答的好评/差评转化为可审计、可召回的"回答策略记忆",用于下一次相似问题前提醒 Agent 检查历史踩坑。该能力依赖 M7.6 的 `conversation_id`、`message_id`、`trace_id` 和 tool trace,但不阻塞 M8/M9/M12 的机制与行动轴主线。
+
+**核心原则**:
+
+- 反馈记忆是"参考和警示",不是机制事实库;事实仍以 Nanoka/数据库/工具计算为准。
+- 单个用户反馈默认只影响该用户或该 session;多次相似反馈或人工确认后,才可升级为全局经验。
+- 原始反馈不能无脑注入 prompt;必须做结构化总结、来源追踪和 prompt injection 清洗。
+- 差评也有价值:它不代表"用户说的都对",但能提示 Agent 在相似问题中重新检查候选、版本和排除理由。
+
+**后端交付**:
+
+- [ ] 新增 migration `<next>_feedback_memory.sql`,编号按当时最新 migration 顺延,不要硬编码 `007`。
+- [ ] 新增反馈表:
+  - `answer_feedback`:记录 `conversation_id/message_id/trace_id/session_id/user_id`、评分、标签、用户文字反馈、创建时间。
+  - `feedback_lessons`:从反馈中总结出的结构化经验,包含 intent、entities、verdict、issue_type、lesson、scope、confidence、source_feedback_ids、review_status。
+  - `feedback_lesson_embeddings`:对 lesson 文本做 embedding,字段包含 `embedding_model_id/provider/model/storage_dimensions/content_hash/embedding`。
+- [ ] 新增 API:
+  - `POST /api/messages/{id}/feedback`:提交好评/差评、标签和文本反馈。
+  - `GET /api/feedback?conversation_id=&trace_id=&limit=`:调试/管理用反馈列表。
+  - `GET /api/feedback/lessons?q=&entity=&scope=&limit=`:查看可召回经验。
+  - 可选 `POST /api/feedback/lessons/{id}/review`:人工确认、驳回或升级为全局经验。
+- [ ] 前端反馈标签建议: `good`、`bad`、`missing_key_candidate`、`wrong_mechanic`、`outdated_recommendation`、`bad_for_my_roster`、`bad_reasoning`、`other`。
+- [ ] 后台 lesson 生成:
+  - 输入:用户问题、最终回答、compact tool trace、用户反馈标签/文本。
+  - 输出结构化 JSON,例如 intent/entities/verdict/issue_type/lesson/confidence。
+  - 不存 LLM key/base_url,不存完整 raw prompt。
+  - LLM 总结失败时只保留 raw feedback,不阻断用户操作。
+- [ ] lesson embedding 使用 M7.5 的 embedding catalog;只有对应模型 ready 时写入 `feedback_lesson_embeddings`。
+- [ ] Agent 每次回答前增加"反馈记忆检索"步骤:
+  - 按当前问题 + 已解析实体 + 用户/session scope 检索 top 3-5 lessons。
+  - 注入为独立的 `feedback_memory` 上下文,明确写明"仅作历史反馈参考,事实以工具为准"。
+  - 对 `verdict=bad` 的 lesson,要求 Agent 重新检查相关候选;若仍排除,必须说明排除理由。
+- [ ] 支持个人/全局两级作用域:
+  - `scope=user/session`:该用户或匿名会话立即生效。
+  - `scope=global`:需要多次相似反馈或 `review_status=approved`。
+- [ ] 建立去污染规则:
+  - 删除或转义"忽略系统提示/不要调用工具/泄露 key"等注入性文本。
+  - lesson 只允许表达游戏内容、回答质量问题和候选检查建议。
+  - 召回时限制 token 数,避免历史反馈压过实时工具结果。
+
+**示例 lesson**:
+
+```json
+{
+  "query_intent": "花火配队",
+  "entities": ["花火", "Archer"],
+  "verdict": "bad",
+  "issue_type": "missing_key_candidate",
+  "lesson": "回答花火配队时应检查 Archer。Archer 是量子主C,高频消耗战技点,吃暴伤/拉条/SP,当前版本应优先进入候选;若不推荐,必须说明排除理由。",
+  "scope": "global",
+  "confidence": 0.8
+}
+```
+
+**验收标准**:
+
+- [ ] 用户对一次回答点差评并标记"缺少关键候选"后,DB 中能关联到对应 `message_id/trace_id`。
+- [ ] 后台能生成结构化 lesson,并写入 embedding;重复反馈可合并或提升 confidence。
+- [ ] 下一次询问"花火配什么队好"时,Agent 上下文能召回"曾因遗漏 Archer 被差评"的 lesson。
+- [ ] Agent 若最终仍不推荐 Archer,必须给出基于工具结果的排除理由。
+- [ ] 恶意反馈文本不会进入系统提示或覆盖工具调用规则。
+- [ ] 新增至少 1 个 feedback API 测试 + 1 个 lesson 检索注入测试;`go test ./...` 通过。
 
 ---
 
@@ -1428,5 +1560,5 @@ M5 完成后的新增 DOD:
 
 ---
 
-**文档版本**:v5 — 2026-06-29
-**下一步**:M7/M7.5 后端 API 契约已基本稳定;如前端要历史会话/历史侧边栏复原,先做 M7.6 持久化与 Agent 溯源,否则继续 M8 机制模型 v2。
+**文档版本**:v6 — 2026-07-01
+**下一步**:M7/M7.5/M7.6 后端 API 契约和会话持久化已基本稳定;近期主线继续 M8/M8.8 机制模型与公式倍率对齐。记忆/欢愉专项验证后置为 M12,反馈记忆闭环顺延为 M13。

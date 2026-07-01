@@ -62,14 +62,15 @@ type BreakScenario struct {
 	AttackerLevel int
 	EnemyLevel    int
 
-	ElementKey           string
-	EnemyCount           int
-	BreakEffect          float64
-	BreakDamageBonus     float64
-	SuperBreakBonus      float64
-	ToughnessReduction   float64
-	MaxToughness         float64
-	SuperBreakMultiplier float64
+	ElementKey               string
+	EnemyCount               int
+	BreakEffect              float64
+	BreakDamageBonus         float64
+	SuperBreakBonus          float64
+	ToughnessReduction       float64
+	MaxToughness             float64
+	SuperBreakBaseMultiplier float64
+	SuperBreakMultiplier     float64
 
 	DefReduction    float64
 	DefIgnore       float64
@@ -87,6 +88,7 @@ type BreakBreakdown struct {
 	ToughnessReductionFactor float64         `json:"toughness_reduction_factor,omitempty"`
 	BreakEffectMultiplier    float64         `json:"break_effect_multiplier"`
 	BreakDamageMultiplier    float64         `json:"break_damage_multiplier,omitempty"`
+	SuperBreakBaseMultiplier float64         `json:"super_break_base_multiplier,omitempty"`
 	SuperBreakMultiplier     float64         `json:"super_break_multiplier,omitempty"`
 	DefenseMultiplier        float64         `json:"defense_multiplier"`
 	ResistanceMultiplier     float64         `json:"resistance_multiplier"`
@@ -242,10 +244,7 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 	if toughnessReductionFactor < 0 {
 		toughnessReductionFactor = 0
 	}
-	superBreakMultiplier := scenario.SuperBreakMultiplier
-	if superBreakMultiplier == 0 {
-		superBreakMultiplier = 1
-	}
+	superBreakMultiplier := effectiveSuperBreakBaseMultiplier(scenario)
 	breakEffectMultiplier := 1 + scenario.BreakEffect
 	breakDamageMultiplier := 1 + scenario.BreakDamageBonus + scenario.SuperBreakBonus
 	defenseMultiplier := DefenseMultiplier(scenario.AttackerLevel, scenario.EnemyLevel, scenario.DefReduction, scenario.DefIgnore)
@@ -268,6 +267,7 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 		ToughnessReductionFactor: toughnessReductionFactor,
 		BreakEffectMultiplier:    breakEffectMultiplier,
 		BreakDamageMultiplier:    breakDamageMultiplier,
+		SuperBreakBaseMultiplier: superBreakMultiplier,
 		SuperBreakMultiplier:     superBreakMultiplier,
 		DefenseMultiplier:        defenseMultiplier,
 		ResistanceMultiplier:     resistanceMultiplier,
@@ -276,6 +276,16 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 		TotalDamage:              total,
 		Utilities:                utilities,
 	}
+}
+
+func effectiveSuperBreakBaseMultiplier(scenario BreakScenario) float64 {
+	if scenario.SuperBreakBaseMultiplier != 0 {
+		return scenario.SuperBreakBaseMultiplier
+	}
+	if scenario.SuperBreakMultiplier != 0 {
+		return scenario.SuperBreakMultiplier
+	}
+	return 1
 }
 
 func EstimateHealing(input SustainScenario, modifiers []Modifier) SustainBreakdown {
@@ -399,6 +409,11 @@ func ApplyBreakModifiers(input BreakScenario, modifiers []Modifier, superBreak b
 			if superBreak {
 				scenario.SuperBreakBonus += modifier.Value
 			}
+		case "super_break_base_multiplier":
+			if superBreak {
+				scenario.SuperBreakBaseMultiplier = addSuperBreakBaseMultiplier(scenario, modifier.Value)
+				scenario.SuperBreakMultiplier = scenario.SuperBreakBaseMultiplier
+			}
 		case "weakness_break_efficiency":
 			scenario.ToughnessReduction *= 1 + modifier.Value
 		case "toughness_reduce":
@@ -420,6 +435,14 @@ func ApplyBreakModifiers(input BreakScenario, modifiers []Modifier, superBreak b
 		}
 	}
 	return scenario, utilities
+}
+
+func addSuperBreakBaseMultiplier(scenario BreakScenario, value float64) float64 {
+	base := effectiveSuperBreakBaseMultiplier(scenario)
+	if value == 0 {
+		return base
+	}
+	return base + value - 1
 }
 
 func ApplySustainModifiers(input SustainScenario, modifiers []Modifier) (SustainScenario, []UtilityEffect) {

@@ -109,6 +109,27 @@ func TestEstimateSuperBreakDamage(t *testing.T) {
 	assertClose(t, got.TotalDamage, want)
 }
 
+func TestEstimateSuperBreakDamageBaseMultiplierModifier(t *testing.T) {
+	scenario := BreakScenario{
+		AttackerLevel:            80,
+		EnemyLevel:               80,
+		BreakEffect:              1,
+		ToughnessReduction:       20,
+		SuperBreakBaseMultiplier: 1,
+		Resistance:               0.2,
+	}
+	baseline := EstimateSuperBreakDamage(scenario, nil)
+	got := EstimateSuperBreakDamage(scenario, []Modifier{
+		{StatKey: "super_break_base_multiplier", Value: 1.25, AttackTag: "super_break"},
+		{StatKey: "super_break_dmg_bonus", Value: 0.4, AttackTag: "super_break"},
+	})
+
+	assertClose(t, got.SuperBreakBaseMultiplier, 1.25)
+	assertClose(t, got.SuperBreakMultiplier, 1.25)
+	assertClose(t, got.BreakDamageMultiplier, 1.4)
+	assertClose(t, got.TotalDamage/baseline.TotalDamage, 1.25*1.4)
+}
+
 func TestEstimateHealing(t *testing.T) {
 	got := EstimateHealing(SustainScenario{
 		ScalingStat:          1000,

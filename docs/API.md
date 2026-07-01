@@ -194,13 +194,15 @@ Content-Type: application/json
 ```
 
 ```json
-{"message":"花火怎么配队"}
+{"message":"花火怎么配队","conversation_id":123,"session_id":"anon-browser-session"}
 ```
+
+`conversation_id` 和 `session_id` 可选。不传 `conversation_id` 时,后端会自动创建会话;旧 `{message}` 调用保持可用。
 
 响应:
 
 ```json
-{"message":"...","trace_id":"..."}
+{"message":"...","trace_id":"...","conversation_id":123}
 ```
 
 响应头也会包含 `X-Trace-Id`。
@@ -223,17 +225,86 @@ event: tool_result
 data: {"type":"tool_result","trace_id":"...","tool_call_id":"...","name":"get_character","result":{...}}
 
 event: final
-data: {"message":"...","trace_id":"..."}
+data: {"message":"...","trace_id":"...","conversation_id":123}
 
 event: error
-data: {"code":"LLM_UPSTREAM_ERROR","message":"..."}
+data: {"code":"LLM_UPSTREAM_ERROR","message":"...","trace_id":"...","conversation_id":123}
 ```
 
 注意:当前 SSE 会流式输出工具调用轨迹和最终答案;LLM token 级 delta 需要后续把 Agent 上游请求切到 chat completion streaming。
 
+## Conversations
+
+M7.6 起,Agent 问答会写入会话、消息和 tool trace。落库失败不会阻断实时回答;历史查询接口需要先运行 `python scripts/migrate.py` 应用 `006_persistence_audit.sql`。
+
+`GET /api/conversations?session_id=&limit=20&offset=0`
+
+按 `updated_at` 倒序返回会话列表,包含 `last_message`。
+
+`GET /api/conversations/{id}`
+
+返回会话详情和按时间排序的 `messages`:
+
+```json
+{
+  "id": 123,
+  "session_id": "anon-browser-session",
+  "title": "花火怎么配队",
+  "messages": [
+    {"id": 1, "role": "user", "content": "花火怎么配队", "turn_id": null},
+    {"id": 2, "role": "assistant", "content": "...", "turn_id": 9}
+  ]
+}
+```
+
+`PATCH /api/conversations/{id}`
+
+```json
+{"title":"花火配队"}
+```
+
+`DELETE /api/conversations/{id}`
+
+删除会话并级联删除消息、turn 和 tool trace。
+
+`GET /api/conversations/{id}/turns`
+
+返回该会话的 Agent turn 摘要,包含 `trace_id/status/model/latency_ms/tool_call_count/token usage/error`。
+
+`GET /api/turns/{trace_id}`
+
+返回单次问答的完整工具链:
+
+```json
+{
+  "trace_id": "...",
+  "conversation_id": 123,
+  "status": "completed",
+  "tool_calls": [
+    {
+      "seq": 0,
+      "tool_call_id": "call_...",
+      "name": "get_character",
+      "args": {"query": "花火"},
+      "result": {"id": 1306, "name_zh": "花火"},
+      "latency_ms": 12
+    }
+  ]
+}
+```
+
 ## Mechanics
 
 机制接口统一 `POST application/json`。
+
+通用机制字段:
+
+- `include_eidolons` / `eidolons`:星魂开关,默认 E0。
+- `active_contexts`:额外启用的场景上下文,如 `technique`、`combat_start`、`on_break`、`on_wave_start`。
+- `inactive_contexts`:强制关闭的场景上下文,如 `skill_active`、`ult_active`。
+- 默认启用 `passive`、`field_active`、`skill_active`、`ult_active`、`conditional`、`on_attack`;默认不启用秘技、开局、击破后、波次开始和一次性瞬发效果。
+- 结果会返回 `active_contexts`、`inactive_contexts`、`applied_by_side`、`skipped_by_side`;被场景过滤或 non-stacking 去重的 modifier 会在 `skipped_modifiers[].skip_reason` 标注原因。
+- `super_break_base_multiplier`:超击破基础倍率推荐字段;`super_break_multiplier` 保留为旧别名;`super_break_dmg_bonus` 只表示超击破增伤区。
 
 `POST /api/mechanics/compare-character-fit`
 
@@ -256,6 +327,8 @@ data: {"code":"LLM_UPSTREAM_ERROR","message":"..."}
   "enemy_count": 3,
   "break_effect": 2.5,
   "toughness_reduction": 30,
+  "super_break_base_multiplier": 1,
+  "active_contexts": ["technique"],
   "include_eidolons": true,
   "eidolons": [6]
 }

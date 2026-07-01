@@ -46,6 +46,8 @@ func main() {
 	attackTag := flag.String("attack-tag", "", "attack tag: basic, skill, ult, fua, dot, break, super_break")
 	includeEidolons := flag.Bool("include-eidolons", false, "include eidolon modifiers in mechanics estimates")
 	eidolonsCSV := flag.String("eidolons", "", "comma-separated enabled eidolons, e.g. 1,2,6")
+	activeContextsCSV := flag.String("active-contexts", "", "comma-separated extra active mechanic contexts, e.g. technique,on_break,combat_start")
+	inactiveContextsCSV := flag.String("inactive-contexts", "", "comma-separated mechanic contexts to force off, e.g. ult_active,skill_active")
 	scalingStat := flag.String("scaling-stat", "", "scaling stat for sustain tools: atk, hp, def")
 	baseScalingStat := flag.Float64("base-scaling-stat", 1000, "base scaling stat for local mechanic estimates")
 	abilityMultiplier := flag.Float64("ability-multiplier", 1, "ability multiplier, e.g. 2.4 for 240%")
@@ -56,6 +58,7 @@ func main() {
 	toughnessReduction := flag.Float64("toughness-reduction", 30, "toughness reduction for super break")
 	maxToughness := flag.Float64("max-toughness", 90, "enemy max toughness for break damage")
 	enemyCount := flag.Int("enemy-count", 1, "enemy count for conditional break/super-break modifiers")
+	superBreakBaseMultiplier := flag.Float64("super-break-base-multiplier", 0, "super break base multiplier; preferred over --super-break-multiplier")
 	superBreakMultiplier := flag.Float64("super-break-multiplier", 1, "super break base multiplier")
 	enemyResistance := flag.Float64("enemy-resistance", 0.2, "enemy resistance as decimal")
 	defReduction := flag.Float64("def-reduction", 0, "enemy defense reduction as decimal")
@@ -118,7 +121,7 @@ func main() {
 		defer cancel()
 
 		service := tools.NewWithModels(pool, defaultEmbeddingID, embedders, defaultRerankID, rerankers, cfg.RerankTopN)
-		result, err := runTool(ctx, service, *toolName, *query, *charID, *axis, *target, *role, *element, *path, *rarity, *limit, *entityKind, *entityID, *variantCSV, *excludeCSV, *supportID, *supportIDsCSV, *attackTag, *includeEidolons, *eidolonsCSV, *scalingStat, *baseScalingStat, *abilityMultiplier, *flatValue, *breakEffect, *breakDamageBonus, *superBreakBonus, *toughnessReduction, *maxToughness, *enemyCount, *superBreakMultiplier, *enemyResistance, *defReduction, *defIgnore, *resReduction, *resPen, *vulnerability, *damageReduction, *durationTurns, *cooldownTurns, *cycleTurns, *startDelayTurns)
+		result, err := runTool(ctx, service, *toolName, *query, *charID, *axis, *target, *role, *element, *path, *rarity, *limit, *entityKind, *entityID, *variantCSV, *excludeCSV, *supportID, *supportIDsCSV, *attackTag, *includeEidolons, *eidolonsCSV, *activeContextsCSV, *inactiveContextsCSV, *scalingStat, *baseScalingStat, *abilityMultiplier, *flatValue, *breakEffect, *breakDamageBonus, *superBreakBonus, *toughnessReduction, *maxToughness, *enemyCount, *superBreakBaseMultiplier, *superBreakMultiplier, *enemyResistance, *defReduction, *defIgnore, *resReduction, *resPen, *vulnerability, *damageReduction, *durationTurns, *cooldownTurns, *cycleTurns, *startDelayTurns)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -261,6 +264,8 @@ func runTool(
 	attackTag string,
 	includeEidolons bool,
 	eidolonsCSV string,
+	activeContextsCSV string,
+	inactiveContextsCSV string,
 	scalingStat string,
 	baseScalingStat float64,
 	abilityMultiplier float64,
@@ -271,6 +276,7 @@ func runTool(
 	toughnessReduction float64,
 	maxToughness float64,
 	enemyCount int,
+	superBreakBaseMultiplier float64,
 	superBreakMultiplier float64,
 	enemyResistance float64,
 	defReduction float64,
@@ -288,7 +294,7 @@ func runTool(
 	if err != nil {
 		return nil, err
 	}
-	modifierOptions := tools.NewModifierOptions(includeEidolons, eidolons)
+	modifierOptions := tools.NewModifierOptionsWithContexts(includeEidolons, eidolons, parseCSVStrings(activeContextsCSV), parseCSVStrings(inactiveContextsCSV))
 
 	switch toolName {
 	case "get_character":
@@ -433,20 +439,21 @@ func runTool(
 			return nil, err
 		}
 		scenario := calc.BreakScenario{
-			ElementKey:           element,
-			EnemyCount:           enemyCount,
-			BreakEffect:          breakEffect,
-			BreakDamageBonus:     breakDamageBonus,
-			SuperBreakBonus:      superBreakBonus,
-			ToughnessReduction:   toughnessReduction,
-			SuperBreakMultiplier: superBreakMultiplier,
-			Resistance:           enemyResistance,
-			DefReduction:         defReduction,
-			DefIgnore:            defIgnore,
-			ResReduction:         resReduction,
-			ResPen:               resPen,
-			Vulnerability:        vulnerability,
-			DamageReduction:      damageReduction,
+			ElementKey:               element,
+			EnemyCount:               enemyCount,
+			BreakEffect:              breakEffect,
+			BreakDamageBonus:         breakDamageBonus,
+			SuperBreakBonus:          superBreakBonus,
+			ToughnessReduction:       toughnessReduction,
+			SuperBreakBaseMultiplier: superBreakBaseMultiplier,
+			SuperBreakMultiplier:     superBreakMultiplier,
+			Resistance:               enemyResistance,
+			DefReduction:             defReduction,
+			DefIgnore:                defIgnore,
+			ResReduction:             resReduction,
+			ResPen:                   resPen,
+			Vulnerability:            vulnerability,
+			DamageReduction:          damageReduction,
 		}
 		return service.EstimateSuperBreakDamage(ctx, charID, supportIDs, scenario, modifierOptions)
 	case "estimate_healing":
@@ -506,6 +513,20 @@ func parseCSVInts(csv string) ([]int, error) {
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+func parseCSVStrings(csv string) []string {
+	var out []string
+	if strings.TrimSpace(csv) == "" {
+		return out
+	}
+	for _, item := range strings.Split(csv, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func parseSupportIDs(csv string, single int) ([]int, error) {

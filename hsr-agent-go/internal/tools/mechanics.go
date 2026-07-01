@@ -40,17 +40,24 @@ type ModifierRow struct {
 	ConditionJSON   json.RawMessage `json:"condition_jsonb,omitempty"`
 	DurationKey     string          `json:"duration_key,omitempty"`
 	StackRule       string          `json:"stack_rule,omitempty"`
+	EffectSide      string          `json:"effect_side,omitempty"`
 	Confidence      float64         `json:"confidence"`
 	Reviewed        bool            `json:"reviewed"`
 }
 
 type ModifierBrief struct {
 	ModifierID    int64    `json:"modifier_id"`
+	SourceKind    string   `json:"source_kind,omitempty"`
+	SourceKey     string   `json:"source_key,omitempty"`
+	SourceNameZH  string   `json:"source_name_zh,omitempty"`
 	StatKey       string   `json:"stat_key"`
 	Value         *float64 `json:"value,omitempty"`
 	ValueUnit     string   `json:"value_unit"`
 	ModifierZone  string   `json:"modifier_zone"`
 	TargetScope   string   `json:"target_scope"`
+	EffectSide    string   `json:"effect_side,omitempty"`
+	ActiveContext string   `json:"active_context,omitempty"`
+	SkipReason    string   `json:"skip_reason,omitempty"`
 	AttackTag     string   `json:"attack_tag,omitempty"`
 	ElementKey    string   `json:"element_key,omitempty"`
 	ConditionText string   `json:"condition_text,omitempty"`
@@ -93,47 +100,65 @@ type FitResult struct {
 }
 
 type DamageGainEstimate struct {
-	Attacker        CharacterRef    `json:"attacker"`
-	Supports        []CharacterRef  `json:"supports"`
-	AttackTag       string          `json:"attack_tag,omitempty"`
-	ScalingStat     string          `json:"scaling_stat"`
-	Eidolons        []int           `json:"eidolons,omitempty"`
-	Baseline        calc.Breakdown  `json:"baseline"`
-	WithModifiers   calc.Breakdown  `json:"with_modifiers"`
-	TotalMultiplier float64         `json:"total_multiplier"`
-	DamageGainPct   float64         `json:"damage_gain_pct"`
-	Applied         []ModifierBrief `json:"applied_modifiers,omitempty"`
-	Skipped         []ModifierBrief `json:"skipped_modifiers,omitempty"`
-	Assumptions     []string        `json:"assumptions"`
-	Caveats         []string        `json:"caveats,omitempty"`
+	Attacker         CharacterRef    `json:"attacker"`
+	Supports         []CharacterRef  `json:"supports"`
+	AttackTag        string          `json:"attack_tag,omitempty"`
+	ScalingStat      string          `json:"scaling_stat"`
+	Eidolons         []int           `json:"eidolons,omitempty"`
+	ActiveContexts   []string        `json:"active_contexts,omitempty"`
+	InactiveContexts []string        `json:"inactive_contexts,omitempty"`
+	Baseline         calc.Breakdown  `json:"baseline"`
+	WithModifiers    calc.Breakdown  `json:"with_modifiers"`
+	TotalMultiplier  float64         `json:"total_multiplier"`
+	DamageGainPct    float64         `json:"damage_gain_pct"`
+	Applied          []ModifierBrief `json:"applied_modifiers,omitempty"`
+	Skipped          []ModifierBrief `json:"skipped_modifiers,omitempty"`
+	AppliedBySide    ModifierGroups  `json:"applied_by_side,omitempty"`
+	SkippedBySide    ModifierGroups  `json:"skipped_by_side,omitempty"`
+	Assumptions      []string        `json:"assumptions"`
+	Caveats          []string        `json:"caveats,omitempty"`
 }
 
 type MechanicEstimate struct {
-	Mechanic        string          `json:"mechanic"`
-	Subject         CharacterRef    `json:"subject"`
-	Supports        []CharacterRef  `json:"supports,omitempty"`
-	AttackTag       string          `json:"attack_tag,omitempty"`
-	ScalingStat     string          `json:"scaling_stat,omitempty"`
-	ElementKey      string          `json:"element_key,omitempty"`
-	EnemyCount      int             `json:"enemy_count,omitempty"`
-	Eidolons        []int           `json:"eidolons,omitempty"`
-	Baseline        any             `json:"baseline"`
-	WithModifiers   any             `json:"with_modifiers"`
-	TotalMultiplier float64         `json:"total_multiplier"`
-	GainPct         float64         `json:"gain_pct"`
-	Applied         []ModifierBrief `json:"applied_modifiers,omitempty"`
-	Skipped         []ModifierBrief `json:"skipped_modifiers,omitempty"`
-	Assumptions     []string        `json:"assumptions"`
-	Caveats         []string        `json:"caveats,omitempty"`
+	Mechanic         string          `json:"mechanic"`
+	Subject          CharacterRef    `json:"subject"`
+	Supports         []CharacterRef  `json:"supports,omitempty"`
+	AttackTag        string          `json:"attack_tag,omitempty"`
+	ScalingStat      string          `json:"scaling_stat,omitempty"`
+	ElementKey       string          `json:"element_key,omitempty"`
+	EnemyCount       int             `json:"enemy_count,omitempty"`
+	Eidolons         []int           `json:"eidolons,omitempty"`
+	ActiveContexts   []string        `json:"active_contexts,omitempty"`
+	InactiveContexts []string        `json:"inactive_contexts,omitempty"`
+	Baseline         any             `json:"baseline"`
+	WithModifiers    any             `json:"with_modifiers"`
+	TotalMultiplier  float64         `json:"total_multiplier"`
+	GainPct          float64         `json:"gain_pct"`
+	Applied          []ModifierBrief `json:"applied_modifiers,omitempty"`
+	Skipped          []ModifierBrief `json:"skipped_modifiers,omitempty"`
+	AppliedBySide    ModifierGroups  `json:"applied_by_side,omitempty"`
+	SkippedBySide    ModifierGroups  `json:"skipped_by_side,omitempty"`
+	Assumptions      []string        `json:"assumptions"`
+	Caveats          []string        `json:"caveats,omitempty"`
 }
 
+type ModifierGroups map[string][]ModifierBrief
+
 type ModifierOptions struct {
-	IncludeEidolons bool  `json:"include_eidolons"`
-	Eidolons        []int `json:"eidolons,omitempty"`
-	eidolonSet      map[string]bool
+	IncludeEidolons    bool     `json:"include_eidolons"`
+	Eidolons           []int    `json:"eidolons,omitempty"`
+	ActiveContexts     []string `json:"active_contexts,omitempty"`
+	InactiveContexts   []string `json:"inactive_contexts,omitempty"`
+	eidolonSet         map[string]bool
+	activeContextSet   map[string]bool
+	inactiveContextSet map[string]bool
 }
 
 func NewModifierOptions(includeEidolons bool, eidolons []int) ModifierOptions {
+	return NewModifierOptionsWithContexts(includeEidolons, eidolons, nil, nil)
+}
+
+func NewModifierOptionsWithContexts(includeEidolons bool, eidolons []int, activeContexts []string, inactiveContexts []string) ModifierOptions {
 	options := ModifierOptions{IncludeEidolons: includeEidolons}
 	seen := map[int]bool{}
 	for _, eidolon := range eidolons {
@@ -150,12 +175,23 @@ func NewModifierOptions(includeEidolons bool, eidolons []int) ModifierOptions {
 		options.eidolonSet[key] = true
 		options.eidolonSet["e"+key] = true
 	}
+	options.ActiveContexts = normalizeContextList(activeContexts)
+	options.InactiveContexts = normalizeContextList(inactiveContexts)
+	options.activeContextSet = defaultActiveContextSet()
+	for _, contextKey := range options.ActiveContexts {
+		options.activeContextSet[contextKey] = true
+	}
+	options.inactiveContextSet = make(map[string]bool, len(options.InactiveContexts))
+	for _, contextKey := range options.InactiveContexts {
+		options.inactiveContextSet[contextKey] = true
+		delete(options.activeContextSet, contextKey)
+	}
 	return options
 }
 
 func (options ModifierOptions) Normalized() ModifierOptions {
-	if options.eidolonSet == nil || len(options.Eidolons) == 0 {
-		return NewModifierOptions(options.IncludeEidolons, options.Eidolons)
+	if options.eidolonSet == nil || options.activeContextSet == nil {
+		return NewModifierOptionsWithContexts(options.IncludeEidolons, options.Eidolons, options.ActiveContexts, options.InactiveContexts)
 	}
 	return options
 }
@@ -185,6 +221,42 @@ func (options ModifierOptions) AssumptionText() string {
 		return "本次只启用指定星魂来源: " + strings.Join(parts, ", ") + "。"
 	}
 	return "默认按 E0 估算,不计入 eidolon/星魂 来源;需要星魂时传 eidolons=[1..6] 或 include_eidolons=true。"
+}
+
+func (options ModifierOptions) ContextAllows(row ModifierRow) (bool, string) {
+	options = options.Normalized()
+	contextKey := inferActiveContext(row)
+	if options.inactiveContextSet[contextKey] {
+		return false, "inactive_context:" + contextKey
+	}
+	if options.activeContextSet[contextKey] {
+		return true, ""
+	}
+	return false, "inactive_context:" + contextKey
+}
+
+func (options ModifierOptions) ActiveContextList() []string {
+	options = options.Normalized()
+	out := make([]string, 0, len(options.activeContextSet))
+	for contextKey := range options.activeContextSet {
+		out = append(out, contextKey)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (options ModifierOptions) InactiveContextList() []string {
+	options = options.Normalized()
+	out := make([]string, 0, len(options.inactiveContextSet))
+	for contextKey := range options.inactiveContextSet {
+		out = append(out, contextKey)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (options ModifierOptions) ContextAssumptionText() string {
+	return "默认机制场景启用常驻、战技/终结技持续类效果; technique/combat_start/on_break 等触发场景需要 active_contexts 显式开启,也可用 inactive_contexts 排除。"
 }
 
 func (s *Service) ListCharacterModifiers(ctx context.Context, charID int, statKey string, targetScope string, limit int) ([]ModifierRow, error) {
@@ -320,10 +392,13 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 		if !options.Allows(modifier) {
 			continue
 		}
-		if !modifierTargetsAttacker(modifier, selfSupport, attacker.Element) {
+		if !modifierAffectsDamageSubject(modifier, selfSupport, attacker.Element) {
 			continue
 		}
 		if !modifierRelevantForAttack(modifier, attackTag) {
+			continue
+		}
+		if ok, _ := options.ContextAllows(modifier); !ok {
 			continue
 		}
 		fit := scoreModifierFit(modifier, needSet, tags)
@@ -377,10 +452,12 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 	scalingStat := inferScalingStat(axes)
 
 	estimate := &DamageGainEstimate{
-		Attacker:    characterRef(attacker),
-		AttackTag:   strings.TrimSpace(attackTag),
-		ScalingStat: scalingStat,
-		Eidolons:    options.Eidolons,
+		Attacker:         characterRef(attacker),
+		AttackTag:        strings.TrimSpace(attackTag),
+		ScalingStat:      scalingStat,
+		Eidolons:         options.Eidolons,
+		ActiveContexts:   options.ActiveContextList(),
+		InactiveContexts: options.InactiveContextList(),
 		Assumptions: []string{
 			"默认攻击者/敌人等级均为80,敌人基础抗性20%,敌人已破韧以避免韧性状态干扰对比。",
 			"默认面板: 1000点主缩放属性、100%技能倍率、50%暴击率、100%暴击伤害。",
@@ -392,7 +469,8 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 			"基于施放者自身属性换算的加成若缺少施放者面板,不会被强行折算进伤害。",
 		},
 	}
-	var calcModifiers []calc.Modifier
+	estimate.Assumptions = append(estimate.Assumptions, options.ContextAssumptionText())
+	var collected collectedModifiers
 	for _, supportID := range supportIDs {
 		support, err := s.GetCharacter(ctx, fmt.Sprint(supportID))
 		if err != nil {
@@ -407,26 +485,36 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 			if !options.Allows(row) {
 				continue
 			}
-			if !modifierTargetsAttacker(row, supportID == attackerID, attacker.Element) || !modifierRelevantForAttack(row, attackTag) {
+			if !modifierAffectsDamageSubject(row, supportID == attackerID, attacker.Element) || !modifierRelevantForAttack(row, attackTag) {
+				continue
+			}
+			if ok, reason := options.ContextAllows(row); !ok {
+				if isPotentiallyUseful(row) {
+					collected.Skipped = append(collected.Skipped, modifierBriefWithSkipReason(row, reason))
+				}
 				continue
 			}
 			modifier, ok := toCalcModifier(row, scalingStat, attackTag)
 			if !ok {
 				if isPotentiallyUseful(row) {
-					estimate.Skipped = append(estimate.Skipped, modifierBrief(row))
+					collected.Skipped = append(collected.Skipped, modifierBrief(row))
 				}
 				continue
 			}
-			calcModifiers = append(calcModifiers, modifier)
-			estimate.Applied = append(estimate.Applied, modifierBrief(row))
+			collected.addApplied(row, modifier)
 		}
 	}
+	estimate.Applied = collected.Applied
+	estimate.Skipped = collected.Skipped
 	if len(estimate.Applied) > 32 {
 		estimate.Applied = estimate.Applied[:32]
 	}
 	if len(estimate.Skipped) > 24 {
 		estimate.Skipped = estimate.Skipped[:24]
 	}
+	estimate.AppliedBySide = groupModifierBriefsBySide(estimate.Applied)
+	estimate.SkippedBySide = groupModifierBriefsBySide(estimate.Skipped)
+	calcModifiers := collected.Modifiers
 
 	scenario := calc.Scenario{
 		AttackerLevel:     80,
@@ -468,7 +556,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 		return nil, err
 	}
 	scalingStat := inferScalingStat(axes)
-	collected, err := s.collectModifiers(ctx, attacker, attacker.Element, defaultSupportIDs(attackerID, supportIDs), "dot", options, func(row ModifierRow) (calc.Modifier, bool) {
+	collected, err := s.collectModifiers(ctx, attacker, attacker.Element, defaultSupportIDs(attackerID, supportIDs), "dot", options, modifierAffectsDamageSubject, func(row ModifierRow) (calc.Modifier, bool) {
 		return toCalcModifier(row, scalingStat, "dot")
 	})
 	if err != nil {
@@ -501,7 +589,7 @@ func (s *Service) EstimateBreakDamage(ctx context.Context, attackerID int, suppo
 		return nil, err
 	}
 	scenario = normalizeBreakScenario(attacker, scenario)
-	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "break", options, func(row ModifierRow) (calc.Modifier, bool) {
+	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "break", options, modifierAffectsDamageSubject, func(row ModifierRow) (calc.Modifier, bool) {
 		return toBreakCalcModifier(row, false, scenario.EnemyCount)
 	})
 	if err != nil {
@@ -536,7 +624,7 @@ func (s *Service) EstimateSuperBreakDamage(ctx context.Context, attackerID int, 
 	if scenario.ToughnessReduction == 0 {
 		scenario.ToughnessReduction = 30
 	}
-	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "super_break", options, func(row ModifierRow) (calc.Modifier, bool) {
+	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "super_break", options, modifierAffectsDamageSubject, func(row ModifierRow) (calc.Modifier, bool) {
 		return toBreakCalcModifier(row, true, scenario.EnemyCount)
 	})
 	if err != nil {
@@ -552,10 +640,10 @@ func (s *Service) EstimateSuperBreakDamage(ctx context.Context, attackerID int, 
 	estimate.WithModifiers = withModifiers
 	estimate.Assumptions = append(estimate.Assumptions,
 		"超击破伤害按等级倍率、削韧值/10、超击破基础倍率、击破特攻、击破/超击破伤害加成、减防、抗性、易伤和减伤乘区估算。",
-		"默认削韧值为30; 未传 super_break_multiplier 时底层公式按 1.0 处理。",
+		"默认削韧值为30; 未传 super_break_base_multiplier/super_break_multiplier 时底层公式按 1.0 处理。",
 	)
-	if hasSuperBreakConversion(collected.Applied) {
-		estimate.Assumptions = append(estimate.Assumptions, "转化为 N% 超击破伤害的效果按基础倍率归一化处理,例如 125% 记为相对默认 100% 的额外 25%。")
+	if hasSuperBreakBaseMultiplier(collected.Applied) {
+		estimate.Assumptions = append(estimate.Assumptions, "\u8f6c\u5316\u4e3a N% \u8d85\u51fb\u7834\u4f24\u5bb3\u7684\u6548\u679c\u4f5c\u4e3a super_break_base_multiplier \u8fdb\u5165\u57fa\u7840\u500d\u7387\u4e58\u533a,\u4e0d\u518d\u5f52\u5165\u8d85\u51fb\u7834\u589e\u4f24\u533a\u3002")
 	}
 	setMechanicRatio(estimate, baseline.TotalDamage, withModifiers.TotalDamage)
 	return estimate, nil
@@ -578,10 +666,13 @@ func (s *Service) EstimateUptime(ctx context.Context, scenario calc.UptimeScenar
 }
 
 type collectedModifiers struct {
-	Supports  []CharacterRef
-	Modifiers []calc.Modifier
-	Applied   []ModifierBrief
-	Skipped   []ModifierBrief
+	Supports      []CharacterRef
+	Modifiers     []calc.Modifier
+	Applied       []ModifierBrief
+	Skipped       []ModifierBrief
+	AppliedBySide ModifierGroups
+	SkippedBySide ModifierGroups
+	nonStacking   map[string]int
 }
 
 func (s *Service) estimateSustain(
@@ -616,7 +707,7 @@ ORDER BY ca.kind, ca.stat`, charID)
 	}
 	scalingStat = normalizeScalingStat(scalingStat)
 	scenario = normalizeSustainScenario(scenario)
-	collected, err := s.collectModifiers(ctx, subject, subject.Element, supportIDs, "", options, func(row ModifierRow) (calc.Modifier, bool) {
+	collected, err := s.collectModifiers(ctx, subject, subject.Element, supportIDs, "", options, modifierTargetsAttacker, func(row ModifierRow) (calc.Modifier, bool) {
 		return toSustainCalcModifier(row, scalingStat)
 	})
 	if err != nil {
@@ -643,6 +734,7 @@ func (s *Service) collectModifiers(
 	supportIDs []int,
 	attackTag string,
 	options ModifierOptions,
+	targetFilter func(ModifierRow, bool, string) bool,
 	convert func(ModifierRow) (calc.Modifier, bool),
 ) (collectedModifiers, error) {
 	var out collectedModifiers
@@ -660,10 +752,16 @@ func (s *Service) collectModifiers(
 			if !options.Allows(row) {
 				continue
 			}
-			if !modifierTargetsAttacker(row, supportID == subject.ID, targetElement) {
+			if !targetFilter(row, supportID == subject.ID, targetElement) {
 				continue
 			}
 			if !modifierRelevantForAttack(row, attackTag) {
+				continue
+			}
+			if ok, reason := options.ContextAllows(row); !ok {
+				if isPotentiallyUseful(row) {
+					out.Skipped = append(out.Skipped, modifierBriefWithSkipReason(row, reason))
+				}
 				continue
 			}
 			modifier, ok := convert(row)
@@ -673,24 +771,58 @@ func (s *Service) collectModifiers(
 				}
 				continue
 			}
-			out.Modifiers = append(out.Modifiers, modifier)
-			out.Applied = append(out.Applied, modifierBrief(row))
+			out.addApplied(row, modifier)
 		}
 	}
 	out.Applied = limitModifierBriefs(out.Applied, 40)
 	out.Skipped = limitModifierBriefs(out.Skipped, 28)
+	out.AppliedBySide = groupModifierBriefsBySide(out.Applied)
+	out.SkippedBySide = groupModifierBriefsBySide(out.Skipped)
 	return out, nil
+}
+
+func (out *collectedModifiers) addApplied(row ModifierRow, modifier calc.Modifier) {
+	brief := modifierBriefForApplied(row, modifier)
+	key, ok := nonStackingKey(row, modifier)
+	if !ok {
+		out.Modifiers = append(out.Modifiers, modifier)
+		out.Applied = append(out.Applied, brief)
+		return
+	}
+	if out.nonStacking == nil {
+		out.nonStacking = map[string]int{}
+	}
+	if existingIndex, exists := out.nonStacking[key]; exists {
+		existing := out.Applied[existingIndex]
+		if nonStackingPriority(brief) > nonStackingPriority(existing) {
+			existing.SkipReason = "non_stacking_replaced_by:" + fmt.Sprint(row.ModifierID)
+			out.Skipped = append(out.Skipped, existing)
+			out.Modifiers[existingIndex] = modifier
+			out.Applied[existingIndex] = brief
+			return
+		}
+		brief.SkipReason = "non_stacking_duplicate_of:" + fmt.Sprint(existing.ModifierID)
+		out.Skipped = append(out.Skipped, brief)
+		return
+	}
+	out.nonStacking[key] = len(out.Applied)
+	out.Modifiers = append(out.Modifiers, modifier)
+	out.Applied = append(out.Applied, brief)
 }
 
 func newMechanicEstimate(mechanic string, subject *Character, collected collectedModifiers, options ModifierOptions) *MechanicEstimate {
 	return &MechanicEstimate{
-		Mechanic:    mechanic,
-		Subject:     characterRef(subject),
-		Supports:    collected.Supports,
-		Eidolons:    options.Eidolons,
-		Applied:     collected.Applied,
-		Skipped:     collected.Skipped,
-		Assumptions: []string{options.AssumptionText()},
+		Mechanic:         mechanic,
+		Subject:          characterRef(subject),
+		Supports:         collected.Supports,
+		Eidolons:         options.Eidolons,
+		ActiveContexts:   options.ActiveContextList(),
+		InactiveContexts: options.InactiveContextList(),
+		Applied:          collected.Applied,
+		Skipped:          collected.Skipped,
+		AppliedBySide:    collected.AppliedBySide,
+		SkippedBySide:    collected.SkippedBySide,
+		Assumptions:      []string{options.AssumptionText(), options.ContextAssumptionText()},
 		Caveats: []string{
 			"这是局部乘区估算,不等于完整行动轴或实战总伤/总奶/总盾。",
 			"reviewed=false 的 modifier 仍可能需要人工复核。",
@@ -793,23 +925,55 @@ func scanModifier(scan scanner) (ModifierRow, error) {
 		return item, err
 	}
 	item.ConditionJSON = json.RawMessage(conditionJSON)
+	item.EffectSide = inferEffectSide(item)
 	return item, nil
 }
 
 func modifierBrief(row ModifierRow) ModifierBrief {
+	effectSide := row.EffectSide
+	if effectSide == "" {
+		effectSide = inferEffectSide(row)
+	}
 	return ModifierBrief{
 		ModifierID:    row.ModifierID,
+		SourceKind:    row.SourceKind,
+		SourceKey:     row.SourceKey,
+		SourceNameZH:  row.SourceNameZH,
 		StatKey:       row.StatKey,
 		Value:         row.Value,
 		ValueUnit:     row.ValueUnit,
 		ModifierZone:  row.ModifierZone,
 		TargetScope:   row.TargetScope,
+		EffectSide:    effectSide,
+		ActiveContext: inferActiveContext(row),
 		AttackTag:     row.AttackTag,
 		ElementKey:    row.ElementKey,
 		ConditionText: truncateText(row.ConditionText, 120),
 		Reviewed:      row.Reviewed,
 		Confidence:    row.Confidence,
 	}
+}
+
+func modifierBriefForApplied(row ModifierRow, modifier calc.Modifier) ModifierBrief {
+	brief := modifierBrief(row)
+	if modifier.StatKey != "" {
+		brief.StatKey = modifier.StatKey
+	}
+	value := modifier.Value
+	brief.Value = &value
+	if modifier.AttackTag != "" {
+		brief.AttackTag = modifier.AttackTag
+	}
+	if modifier.ElementKey != "" {
+		brief.ElementKey = modifier.ElementKey
+	}
+	return brief
+}
+
+func modifierBriefWithSkipReason(row ModifierRow, reason string) ModifierBrief {
+	brief := modifierBrief(row)
+	brief.SkipReason = reason
+	return brief
 }
 
 func characterRef(c *Character) CharacterRef {
@@ -867,7 +1031,7 @@ func modifierBaseWeight(statKey string) float64 {
 		return 11
 	case "def_ignore", "def_shred", "res_pen", "res_reduction", "vulnerability":
 		return 11
-	case "break_effect", "weakness_break_efficiency", "break_dmg_bonus", "super_break_dmg_bonus", "toughness_ignore", "weakness_implant":
+	case "break_effect", "weakness_break_efficiency", "break_dmg_bonus", "super_break_dmg_bonus", "super_break_base_multiplier", "toughness_ignore", "weakness_implant":
 		return 10
 	case "action_advance", "extra_action":
 		return 9
@@ -911,7 +1075,7 @@ func modifierReason(row ModifierRow, matches []string) string {
 }
 
 func modifierTargetsAttacker(row ModifierRow, selfSupport bool, attackerElement string) bool {
-	if row.ElementKey != "" && row.ElementKey != "any" && !strings.EqualFold(row.ElementKey, attackerElement) {
+	if !modifierElementMatches(row, attackerElement) {
 		return false
 	}
 	switch row.TargetScope {
@@ -924,16 +1088,40 @@ func modifierTargetsAttacker(row ModifierRow, selfSupport bool, attackerElement 
 	}
 }
 
+func modifierAffectsDamageSubject(row ModifierRow, selfSupport bool, attackerElement string) bool {
+	if !modifierElementMatches(row, attackerElement) {
+		return false
+	}
+	if isEnemyDebuff(row) {
+		return true
+	}
+	return modifierTargetsAttacker(row, selfSupport, attackerElement)
+}
+
+func modifierElementMatches(row ModifierRow, attackerElement string) bool {
+	elementKey := strings.TrimSpace(row.ElementKey)
+	if elementKey == "" || strings.EqualFold(elementKey, "any") {
+		return true
+	}
+	return strings.EqualFold(elementKey, strings.TrimSpace(attackerElement))
+}
+
 func modifierRelevantForAttack(row ModifierRow, attackTag string) bool {
-	attackTag = strings.TrimSpace(attackTag)
+	attackTag = strings.ToLower(strings.TrimSpace(attackTag))
 	targetTag := targetAttackTag(row)
 	if targetTag == "" || targetTag == "any" || attackTag == "" {
+		return true
+	}
+	if attackTag == "super_break" && targetTag == "break" {
 		return true
 	}
 	return targetTag == attackTag
 }
 
 func targetAttackTag(row ModifierRow) string {
+	if tag := strings.ToLower(strings.TrimSpace(row.AttackTag)); tag != "" {
+		return tag
+	}
 	switch row.StatKey {
 	case "basic_dmg_bonus":
 		return "basic"
@@ -947,10 +1135,258 @@ func targetAttackTag(row ModifierRow) string {
 		return "dot"
 	case "break_dmg_bonus":
 		return "break"
-	case "super_break_dmg_bonus":
+	case "super_break_dmg_bonus", "super_break_base_multiplier":
 		return "super_break"
 	default:
 		return ""
+	}
+}
+
+func defaultActiveContextSet() map[string]bool {
+	return map[string]bool{
+		"passive":      true,
+		"field_active": true,
+		"skill_active": true,
+		"ult_active":   true,
+		"conditional":  true,
+		"on_attack":    true,
+	}
+}
+
+func normalizeContextList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = normalizeContextKey(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeContextKey(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "-", "_")
+	switch value {
+	case "skill", "skill_buff", "skill_active":
+		return "skill_active"
+	case "ult", "ultimate", "ultimate_active", "ult_active":
+		return "ult_active"
+	case "talent", "passive":
+		return "passive"
+	case "field", "field_active":
+		return "field_active"
+	case "tech", "technique":
+		return "technique"
+	case "combat_start", "battle_start", "start":
+		return "combat_start"
+	case "wave_start", "on_wave_start":
+		return "on_wave_start"
+	case "break", "on_break":
+		return "on_break"
+	case "attack", "on_attack":
+		return "on_attack"
+	case "instant":
+		return "instant"
+	case "conditional", "condition":
+		return "conditional"
+	default:
+		return value
+	}
+}
+
+func inferActiveContext(row ModifierRow) string {
+	sourceKind := strings.ToLower(strings.TrimSpace(row.SourceKind))
+	durationKey := strings.ToLower(strings.TrimSpace(row.DurationKey))
+	conditionText := row.ConditionText
+	attackTag := targetAttackTag(row)
+	if sourceKind == "technique" {
+		return "technique"
+	}
+	if containsAny(conditionText, "每个波次", "波次开始") {
+		return "on_wave_start"
+	}
+	if containsAny(conditionText, "战斗开始", "进入战斗后") {
+		return "combat_start"
+	}
+	if containsAny(conditionText, "弱点被击破", "造成弱点击破", "击破后", "on_break") {
+		return "on_break"
+	}
+	if containsAny(conditionText, "持有【狐祈】", "持有[狐祈]", "狐祈") {
+		return "skill_active"
+	}
+	if durationKey == "skill_active" {
+		return "skill_active"
+	}
+	if durationKey == "ult_active" || attackTag == "ult" && durationKey != "instant" {
+		return "ult_active"
+	}
+	switch sourceKind {
+	case "skill":
+		return "skill_active"
+	case "ult", "ultimate":
+		if durationKey == "instant" {
+			return "instant"
+		}
+		return "ult_active"
+	case "talent":
+		if containsAny(conditionText, "在场时") {
+			return "field_active"
+		}
+		return "passive"
+	case "trace":
+		if durationKey == "passive" {
+			return "passive"
+		}
+	case "eidolon":
+		if attackTag == "ult" {
+			return "ult_active"
+		}
+	}
+	switch durationKey {
+	case "passive":
+		return "passive"
+	case "field_active":
+		return "field_active"
+	case "fixed_turns":
+		return "conditional"
+	case "instant":
+		return "instant"
+	case "":
+		return "conditional"
+	default:
+		return normalizeContextKey(durationKey)
+	}
+}
+
+func inferEffectSide(row ModifierRow) string {
+	if isEnemyDebuff(row) {
+		return "enemy_debuff"
+	}
+	if isFieldEffect(row) {
+		return "field_effect"
+	}
+	if isUtilityEffect(row) {
+		return "utility"
+	}
+	return "ally_buff"
+}
+
+func isEnemyDebuff(row ModifierRow) bool {
+	if isEnemyTargetScope(row.TargetScope) {
+		return true
+	}
+	switch row.StatKey {
+	case "def_shred", "res_reduction", "vulnerability", "action_delay", "weakness_implant", "debuff_apply", "debuff_extend", "debuff_resist":
+		return true
+	default:
+		return false
+	}
+}
+
+func isEnemyTargetScope(scope string) bool {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "one_enemy", "all_enemies", "enemy", "enemies", "field_enemy", "enemy_field":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFieldEffect(row ModifierRow) bool {
+	scope := strings.ToLower(strings.TrimSpace(row.TargetScope))
+	return scope == "field" || scope == "ally_field"
+}
+
+func isUtilityEffect(row ModifierRow) bool {
+	if strings.EqualFold(row.ModifierZone, "utility") {
+		return true
+	}
+	switch row.StatKey {
+	case "action_advance", "extra_action", "sp_recovery", "sp_generation", "sp_consumption", "max_sp",
+		"energy_restore", "energy_regen", "cleanse", "revive", "effect_res", "buff_extend",
+		"fua_trigger", "dot_trigger", "speed_pct", "speed_flat":
+		return true
+	default:
+		return false
+	}
+}
+
+func groupModifierBriefsBySide(items []ModifierBrief) ModifierGroups {
+	if len(items) == 0 {
+		return nil
+	}
+	groups := ModifierGroups{}
+	for _, item := range items {
+		side := item.EffectSide
+		if side == "" {
+			side = "ally_buff"
+		}
+		groups[side] = append(groups[side], item)
+	}
+	return groups
+}
+
+func nonStackingKey(row ModifierRow, modifier calc.Modifier) (string, bool) {
+	if !strings.EqualFold(strings.TrimSpace(row.StackRule), "none") || row.Value == nil {
+		return "", false
+	}
+	statKey := strings.ToLower(strings.TrimSpace(modifier.StatKey))
+	if statKey == "" || statKey == "unknown" {
+		return "", false
+	}
+	value := modifier.Value
+	effectSide := row.EffectSide
+	if effectSide == "" {
+		effectSide = inferEffectSide(row)
+	}
+	attackTag := modifier.AttackTag
+	if attackTag == "" {
+		attackTag = targetAttackTag(row)
+	}
+	elementKey := modifier.ElementKey
+	if elementKey == "" {
+		elementKey = row.ElementKey
+	}
+	return strings.Join([]string{
+		fmt.Sprint(row.CharacterID),
+		statKey,
+		strings.ToLower(strings.TrimSpace(row.ModifierZone)),
+		effectSide,
+		attackTag,
+		strings.ToLower(strings.TrimSpace(elementKey)),
+		fmt.Sprintf("%.8g", value),
+		strings.ToLower(strings.TrimSpace(row.ValueUnit)),
+	}, "|"), true
+}
+
+func nonStackingPriority(brief ModifierBrief) int {
+	switch normalizeContextKey(brief.ActiveContext) {
+	case "skill_active":
+		return 90
+	case "ult_active":
+		return 80
+	case "field_active", "passive":
+		return 70
+	case "on_break", "on_attack":
+		return 60
+	case "conditional":
+		return 50
+	case "combat_start", "on_wave_start":
+		return 40
+	case "technique":
+		return 30
+	case "instant":
+		return 10
+	default:
+		return 20
 	}
 }
 
@@ -964,6 +1400,8 @@ func modifierAxisAliases(statKey string) []string {
 		return []string{"def_percent", "def_pct"}
 	case "break_effect":
 		return []string{"break_eff", "break_effect"}
+	case "break_dmg_bonus", "super_break_dmg_bonus", "super_break_base_multiplier":
+		return []string{"break", "super_break", statKey}
 	case "dmg_bonus", "element_dmg_bonus":
 		return []string{"dmg_percent", "dmg_bonus"}
 	case "basic_dmg_bonus":
@@ -1010,7 +1448,7 @@ func fitCaveats(attacker *Character, support *Character, tags []string, result *
 		caveats = append(caveats, fmt.Sprintf("%s 带 hp_scaler 标签,攻击力类加成不应按满收益理解。", attacker.NameZH))
 	}
 	if tagSet["break_scaler"] || tagSet["super_break_team"] {
-		if !hasStat(result.UsefulEffects, "break_effect", "weakness_break_efficiency", "break_dmg_bonus", "super_break_dmg_bonus", "res_pen", "def_ignore", "def_shred") {
+		if !hasStat(result.UsefulEffects, "break_effect", "weakness_break_efficiency", "break_dmg_bonus", "super_break_dmg_bonus", "super_break_base_multiplier", "res_pen", "def_ignore", "def_shred") {
 			caveats = append(caveats, fmt.Sprintf("%s 偏击破/超击破,当前 %s modifiers 未明显覆盖击破效率或击破乘区。", attacker.NameZH, support.NameZH))
 		}
 	}
@@ -1107,15 +1545,16 @@ func toBreakCalcModifier(row ModifierRow, superBreak bool, enemyCount int) (calc
 	if !modifierMatchesEnemyCount(row, enemyCount) {
 		return calc.Modifier{}, false
 	}
-	if !breakCalcSupportsStat(row.StatKey, superBreak) {
+	statKey := row.StatKey
+	value := *row.Value
+	if row.StatKey == "super_break_dmg_bonus" && isSuperBreakConversion(row) {
+		statKey = "super_break_base_multiplier"
+	}
+	if !breakCalcSupportsStat(statKey, superBreak) {
 		return calc.Modifier{}, false
 	}
-	value := *row.Value
-	if row.StatKey == "super_break_dmg_bonus" {
-		value = normalizeSuperBreakBonusValue(row, value)
-	}
 	return calc.Modifier{
-		StatKey:      row.StatKey,
+		StatKey:      statKey,
 		Value:        value,
 		ModifierZone: row.ModifierZone,
 		AttackTag:    targetAttackTag(row),
@@ -1124,21 +1563,15 @@ func toBreakCalcModifier(row ModifierRow, superBreak bool, enemyCount int) (calc
 	}, true
 }
 
-func normalizeSuperBreakBonusValue(row ModifierRow, value float64) float64 {
-	if value <= 1 {
-		return value
-	}
-	text := row.ConditionText
-	if strings.Contains(text, "转化为") && strings.Contains(text, "超击破伤害") {
-		return value - 1
-	}
-	return value
+func isSuperBreakConversion(row ModifierRow) bool {
+	text := strings.ToLower(row.ConditionText)
+	return (strings.Contains(text, "\u8f6c\u5316\u4e3a") || strings.Contains(text, "convert")) &&
+		(strings.Contains(text, "\u8d85\u51fb\u7834\u4f24\u5bb3") || strings.Contains(text, "super break"))
 }
 
-func hasSuperBreakConversion(modifiers []ModifierBrief) bool {
+func hasSuperBreakBaseMultiplier(modifiers []ModifierBrief) bool {
 	for _, modifier := range modifiers {
-		if modifier.StatKey == "super_break_dmg_bonus" && modifier.Value != nil && *modifier.Value > 1 &&
-			strings.Contains(modifier.ConditionText, "转化为") && strings.Contains(modifier.ConditionText, "超击破伤害") {
+		if modifier.StatKey == "super_break_base_multiplier" {
 			return true
 		}
 	}
@@ -1230,7 +1663,7 @@ func calcSupportsStat(statKey string) bool {
 	case "atk_pct", "atk_flat", "hp_pct", "hp_flat", "def_pct", "def_flat",
 		"crit_rate", "crit_dmg", "dmg_bonus", "element_dmg_bonus", "basic_dmg_bonus",
 		"skill_dmg_bonus", "ult_dmg_bonus", "fua_dmg_bonus", "dot_dmg_bonus",
-		"break_dmg_bonus", "super_break_dmg_bonus", "additional_dmg", "def_ignore", "def_shred", "res_pen", "res_reduction",
+		"break_dmg_bonus", "super_break_dmg_bonus", "super_break_base_multiplier", "additional_dmg", "def_ignore", "def_shred", "res_pen", "res_reduction",
 		"vulnerability", "dmg_reduction", "action_advance", "action_delay",
 		"sp_recovery", "sp_generation", "sp_consumption", "max_sp", "energy_restore",
 		"energy_regen", "toughness_reduce", "weakness_implant", "weakness_break_efficiency",
@@ -1252,7 +1685,7 @@ func breakCalcSupportsStat(statKey string, superBreak bool) bool {
 		"max_sp", "energy_restore", "energy_regen", "weakness_implant", "toughness_ignore",
 		"buff_extend", "extra_action":
 		return true
-	case "super_break_dmg_bonus":
+	case "super_break_dmg_bonus", "super_break_base_multiplier":
 		return superBreak
 	default:
 		return false

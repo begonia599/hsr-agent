@@ -371,62 +371,73 @@ func toolDefinitions() []toolDef {
 			"limit":   integerSchema("max source rows"),
 		}, []string{"char_id"})),
 		tool("compare_character_fit", "Heuristically compare whether a support's modifiers fit an attacker.", object(map[string]any{
-			"attacker_id":      integerSchema("attacker/core character id"),
-			"support_id":       integerSchema("support/candidate character id"),
-			"attack_tag":       stringSchema("optional attack tag: basic/skill/ult/fua/dot/break/super_break"),
-			"include_eidolons": booleanSchema("include eidolon modifiers; default false/E0"),
-			"eidolons":         arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"attacker_id":       integerSchema("attacker/core character id"),
+			"support_id":        integerSchema("support/candidate character id"),
+			"attack_tag":        stringSchema("optional attack tag: basic/skill/ult/fua/dot/break/super_break"),
+			"include_eidolons":  booleanSchema("include eidolon modifiers; default false/E0"),
+			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"attacker_id", "support_id"})),
 		tool("estimate_damage_gain", "Estimate local standard-damage multiplier from support modifiers under a default scenario.", object(map[string]any{
-			"attacker_id":      integerSchema("attacker/core character id"),
-			"support_ids":      arraySchema(integerSchema("support character id")),
-			"attack_tag":       stringSchema("optional attack tag: basic/skill/ult/fua/dot/break/super_break"),
-			"include_eidolons": booleanSchema("include eidolon modifiers; default false/E0"),
-			"eidolons":         arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"attacker_id":       integerSchema("attacker/core character id"),
+			"support_ids":       arraySchema(integerSchema("support character id")),
+			"attack_tag":        stringSchema("optional attack tag: basic/skill/ult/fua/dot/break/super_break"),
+			"include_eidolons":  booleanSchema("include eidolon modifiers; default false/E0"),
+			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"attacker_id", "support_ids"})),
 		tool("estimate_dot_damage", "Estimate local DoT damage multiplier; DoT ignores crit by default.", object(map[string]any{
-			"attacker_id":      integerSchema("attacker/core character id"),
-			"support_ids":      arraySchema(integerSchema("support character id; defaults to self if empty")),
-			"include_eidolons": booleanSchema("include eidolon modifiers; default false/E0"),
-			"eidolons":         arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"attacker_id":       integerSchema("attacker/core character id"),
+			"support_ids":       arraySchema(integerSchema("support character id; defaults to self if empty")),
+			"include_eidolons":  booleanSchema("include eidolon modifiers; default false/E0"),
+			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"attacker_id"})),
 		tool("estimate_break_damage", "Estimate local break damage with explicit break scenario inputs.", object(map[string]any{
-			"attacker_id":      integerSchema("attacker/core character id"),
-			"support_ids":      arraySchema(integerSchema("support character id; defaults to self if empty")),
-			"element":          stringSchema("physical/fire/ice/thunder/wind/quantum/imaginary; default attacker element"),
-			"break_effect":     floatSchema("break effect decimal, e.g. 1.8 for 180%"),
-			"break_dmg_bonus":  floatSchema("break damage bonus decimal"),
-			"max_toughness":    floatSchema("enemy max toughness, default 90"),
-			"enemy_count":      integerSchema("enemy count for conditional modifiers, default 1"),
-			"enemy_resistance": floatSchema("enemy resistance decimal, default 0.2"),
-			"def_reduction":    floatSchema("enemy defense reduction decimal"),
-			"def_ignore":       floatSchema("defense ignore decimal"),
-			"res_reduction":    floatSchema("enemy resistance reduction decimal"),
-			"res_pen":          floatSchema("resistance penetration decimal"),
-			"vulnerability":    floatSchema("vulnerability decimal"),
-			"damage_reduction": floatSchema("enemy damage reduction decimal"),
-			"include_eidolons": booleanSchema("include eidolon modifiers; default false/E0"),
-			"eidolons":         arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"attacker_id":       integerSchema("attacker/core character id"),
+			"support_ids":       arraySchema(integerSchema("support character id; defaults to self if empty")),
+			"element":           stringSchema("physical/fire/ice/thunder/wind/quantum/imaginary; default attacker element"),
+			"break_effect":      floatSchema("break effect decimal, e.g. 1.8 for 180%"),
+			"break_dmg_bonus":   floatSchema("break damage bonus decimal"),
+			"max_toughness":     floatSchema("enemy max toughness, default 90"),
+			"enemy_count":       integerSchema("enemy count for conditional modifiers, default 1"),
+			"enemy_resistance":  floatSchema("enemy resistance decimal, default 0.2"),
+			"def_reduction":     floatSchema("enemy defense reduction decimal"),
+			"def_ignore":        floatSchema("defense ignore decimal"),
+			"res_reduction":     floatSchema("enemy resistance reduction decimal"),
+			"res_pen":           floatSchema("resistance penetration decimal"),
+			"vulnerability":     floatSchema("vulnerability decimal"),
+			"damage_reduction":  floatSchema("enemy damage reduction decimal"),
+			"include_eidolons":  booleanSchema("include eidolon modifiers; default false/E0"),
+			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"attacker_id"})),
 		tool("estimate_super_break_damage", "Estimate local super break damage with explicit toughness reduction inputs.", object(map[string]any{
-			"attacker_id":            integerSchema("attacker/core character id"),
-			"support_ids":            arraySchema(integerSchema("support character id; defaults to self if empty")),
-			"element":                stringSchema("physical/fire/ice/thunder/wind/quantum/imaginary; default attacker element"),
-			"break_effect":           floatSchema("break effect decimal, e.g. 1.8 for 180%"),
-			"break_dmg_bonus":        floatSchema("break damage bonus decimal"),
-			"super_break_dmg_bonus":  floatSchema("super break damage bonus decimal"),
-			"toughness_reduction":    floatSchema("attack toughness reduction, default 30"),
-			"super_break_multiplier": floatSchema("super break base multiplier, default 1"),
-			"enemy_count":            integerSchema("enemy count for conditional modifiers, default 1"),
-			"enemy_resistance":       floatSchema("enemy resistance decimal, default 0.2"),
-			"def_reduction":          floatSchema("enemy defense reduction decimal"),
-			"def_ignore":             floatSchema("defense ignore decimal"),
-			"res_reduction":          floatSchema("enemy resistance reduction decimal"),
-			"res_pen":                floatSchema("resistance penetration decimal"),
-			"vulnerability":          floatSchema("vulnerability decimal"),
-			"damage_reduction":       floatSchema("enemy damage reduction decimal"),
-			"include_eidolons":       booleanSchema("include eidolon modifiers; default false/E0"),
-			"eidolons":               arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"attacker_id":                 integerSchema("attacker/core character id"),
+			"support_ids":                 arraySchema(integerSchema("support character id; defaults to self if empty")),
+			"element":                     stringSchema("physical/fire/ice/thunder/wind/quantum/imaginary; default attacker element"),
+			"break_effect":                floatSchema("break effect decimal, e.g. 1.8 for 180%"),
+			"break_dmg_bonus":             floatSchema("break damage bonus decimal"),
+			"super_break_dmg_bonus":       floatSchema("super break damage bonus decimal"),
+			"toughness_reduction":         floatSchema("attack toughness reduction, default 30"),
+			"super_break_base_multiplier": floatSchema("super break base multiplier, preferred field, default 1"),
+			"super_break_multiplier":      floatSchema("deprecated alias for super_break_base_multiplier, default 1"),
+			"enemy_count":                 integerSchema("enemy count for conditional modifiers, default 1"),
+			"enemy_resistance":            floatSchema("enemy resistance decimal, default 0.2"),
+			"def_reduction":               floatSchema("enemy defense reduction decimal"),
+			"def_ignore":                  floatSchema("defense ignore decimal"),
+			"res_reduction":               floatSchema("enemy resistance reduction decimal"),
+			"res_pen":                     floatSchema("resistance penetration decimal"),
+			"vulnerability":               floatSchema("vulnerability decimal"),
+			"damage_reduction":            floatSchema("enemy damage reduction decimal"),
+			"include_eidolons":            booleanSchema("include eidolon modifiers; default false/E0"),
+			"eidolons":                    arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":             arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts":           arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"attacker_id"})),
 		tool("estimate_healing", "Estimate local healing value from scaling stat, ability multiplier, flat heal, and modifiers.", object(map[string]any{
 			"char_id":            integerSchema("healer character id"),
@@ -437,6 +448,8 @@ func toolDefinitions() []toolDef {
 			"flat_value":         floatSchema("flat heal value"),
 			"include_eidolons":   booleanSchema("include eidolon modifiers; default false/E0"),
 			"eidolons":           arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":    arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts":  arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"char_id"})),
 		tool("estimate_shield", "Estimate local shield value from scaling stat, ability multiplier, flat shield, and modifiers.", object(map[string]any{
 			"char_id":            integerSchema("shielder character id"),
@@ -447,6 +460,8 @@ func toolDefinitions() []toolDef {
 			"flat_value":         floatSchema("flat shield value"),
 			"include_eidolons":   booleanSchema("include eidolon modifiers; default false/E0"),
 			"eidolons":           arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
+			"active_contexts":    arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
+			"inactive_contexts":  arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
 		}, []string{"char_id"})),
 		tool("estimate_uptime", "Estimate simple duration/cycle uptime ratio.", object(map[string]any{
 			"duration_turns":    floatSchema("active duration in turns"),
@@ -542,20 +557,21 @@ func (r *Runner) dispatchTool(ctx context.Context, name string, rawArgs string) 
 		}, modifierOptionsArg(args))
 	case "estimate_super_break_damage":
 		return r.tools.EstimateSuperBreakDamage(ctx, intArg(args, "attacker_id"), intSliceArg(args, "support_ids"), calc.BreakScenario{
-			ElementKey:           strArg(args, "element"),
-			EnemyCount:           intArgDefault(args, "enemy_count", 1),
-			BreakEffect:          floatArgDefault(args, "break_effect", 0),
-			BreakDamageBonus:     floatArgDefault(args, "break_dmg_bonus", 0),
-			SuperBreakBonus:      floatArgDefault(args, "super_break_dmg_bonus", 0),
-			ToughnessReduction:   floatArgDefault(args, "toughness_reduction", 30),
-			SuperBreakMultiplier: floatArgDefault(args, "super_break_multiplier", 1),
-			Resistance:           floatArgDefault(args, "enemy_resistance", 0.2),
-			DefReduction:         floatArgDefault(args, "def_reduction", 0),
-			DefIgnore:            floatArgDefault(args, "def_ignore", 0),
-			ResReduction:         floatArgDefault(args, "res_reduction", 0),
-			ResPen:               floatArgDefault(args, "res_pen", 0),
-			Vulnerability:        floatArgDefault(args, "vulnerability", 0),
-			DamageReduction:      floatArgDefault(args, "damage_reduction", 0),
+			ElementKey:               strArg(args, "element"),
+			EnemyCount:               intArgDefault(args, "enemy_count", 1),
+			BreakEffect:              floatArgDefault(args, "break_effect", 0),
+			BreakDamageBonus:         floatArgDefault(args, "break_dmg_bonus", 0),
+			SuperBreakBonus:          floatArgDefault(args, "super_break_dmg_bonus", 0),
+			ToughnessReduction:       floatArgDefault(args, "toughness_reduction", 30),
+			SuperBreakBaseMultiplier: floatArgDefault(args, "super_break_base_multiplier", 0),
+			SuperBreakMultiplier:     floatArgDefault(args, "super_break_multiplier", 1),
+			Resistance:               floatArgDefault(args, "enemy_resistance", 0.2),
+			DefReduction:             floatArgDefault(args, "def_reduction", 0),
+			DefIgnore:                floatArgDefault(args, "def_ignore", 0),
+			ResReduction:             floatArgDefault(args, "res_reduction", 0),
+			ResPen:                   floatArgDefault(args, "res_pen", 0),
+			Vulnerability:            floatArgDefault(args, "vulnerability", 0),
+			DamageReduction:          floatArgDefault(args, "damage_reduction", 0),
 		}, modifierOptionsArg(args))
 	case "estimate_healing":
 		return r.tools.EstimateHealing(ctx, intArg(args, "char_id"), intSliceArg(args, "support_ids"), strArg(args, "scaling_stat"), calc.SustainScenario{
@@ -619,6 +635,8 @@ func compactToolResult(name string, result any) any {
 		if len(value.Skipped) > 10 {
 			value.Skipped = value.Skipped[:10]
 		}
+		value.AppliedBySide = groupModifierBriefsBySide(value.Applied)
+		value.SkippedBySide = groupModifierBriefsBySide(value.Skipped)
 	case *apptools.MechanicEstimate:
 		if len(value.Applied) > 16 {
 			value.Applied = value.Applied[:16]
@@ -626,8 +644,25 @@ func compactToolResult(name string, result any) any {
 		if len(value.Skipped) > 10 {
 			value.Skipped = value.Skipped[:10]
 		}
+		value.AppliedBySide = groupModifierBriefsBySide(value.Applied)
+		value.SkippedBySide = groupModifierBriefsBySide(value.Skipped)
 	}
 	return result
+}
+
+func groupModifierBriefsBySide(items []apptools.ModifierBrief) apptools.ModifierGroups {
+	if len(items) == 0 {
+		return nil
+	}
+	groups := apptools.ModifierGroups{}
+	for _, item := range items {
+		side := item.EffectSide
+		if side == "" {
+			side = "ally_buff"
+		}
+		groups[side] = append(groups[side], item)
+	}
+	return groups
 }
 
 func compactCharacter(c *apptools.Character) map[string]any {
@@ -759,9 +794,11 @@ func floatArgDefault(args map[string]any, key string, fallback float64) float64 
 }
 
 func modifierOptionsArg(args map[string]any) apptools.ModifierOptions {
-	return apptools.NewModifierOptions(
+	return apptools.NewModifierOptionsWithContexts(
 		boolArgDefault(args, "include_eidolons", false),
 		intSliceArg(args, "eidolons"),
+		strSliceArg(args, "active_contexts"),
+		strSliceArg(args, "inactive_contexts"),
 	)
 }
 

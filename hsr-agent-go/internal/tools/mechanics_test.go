@@ -1,6 +1,10 @@
 package tools
 
-import "testing"
+import (
+	"testing"
+
+	"hsr-agent-go/internal/calc"
+)
 
 func TestInferScalingStatPrefersHPScalerTag(t *testing.T) {
 	got := inferScalingStat([]AxisRow{
@@ -19,6 +23,113 @@ func TestModifierTargetsAttackerHonorsElementCondition(t *testing.T) {
 	}
 	if !modifierTargetsAttacker(row, false, "Quantum") {
 		t.Fatalf("quantum-only modifier should target Quantum attacker")
+	}
+}
+
+func TestModifierAffectsDamageSubjectAcceptsEnemyDebuffs(t *testing.T) {
+	row := ModifierRow{TargetScope: "one_enemy", StatKey: "def_shred", Value: floatPtr(0.23), ElementKey: "fire"}
+	if modifierTargetsAttacker(row, false, "Fire") {
+		t.Fatalf("enemy debuff should not be treated as an ally-targeting buff")
+	}
+	if !modifierAffectsDamageSubject(row, false, "Fire") {
+		t.Fatalf("enemy debuff should affect the damage subject")
+	}
+	if modifierAffectsDamageSubject(row, false, "Quantum") {
+		t.Fatalf("element-specific enemy debuff should still honor element conditions")
+	}
+}
+
+func TestInferEffectSideAndGrouping(t *testing.T) {
+	enemy := modifierBrief(ModifierRow{ModifierID: 1, TargetScope: "all_enemies", StatKey: "res_reduction"})
+	field := modifierBrief(ModifierRow{ModifierID: 2, TargetScope: "field", StatKey: "weakness_break_efficiency"})
+	utility := modifierBrief(ModifierRow{ModifierID: 3, TargetScope: "all_allies", StatKey: "sp_recovery"})
+	ally := modifierBrief(ModifierRow{ModifierID: 4, TargetScope: "all_allies", StatKey: "crit_dmg"})
+	if enemy.EffectSide != "enemy_debuff" || field.EffectSide != "field_effect" || utility.EffectSide != "utility" || ally.EffectSide != "ally_buff" {
+		t.Fatalf("unexpected effect sides: %q %q %q %q", enemy.EffectSide, field.EffectSide, utility.EffectSide, ally.EffectSide)
+	}
+	groups := groupModifierBriefsBySide([]ModifierBrief{enemy, field, utility, ally})
+	if len(groups["enemy_debuff"]) != 1 || len(groups["field_effect"]) != 1 || len(groups["utility"]) != 1 || len(groups["ally_buff"]) != 1 {
+		t.Fatalf("unexpected modifier groups: %#v", groups)
+	}
+}
+
+func TestModifierRelevantForAttackUsesExplicitAttackTag(t *testing.T) {
+	row := ModifierRow{StatKey: "dmg_bonus", AttackTag: "Skill"}
+	if !modifierRelevantForAttack(row, "skill") {
+		t.Fatalf("explicit attack_tag should match case-insensitively")
+	}
+	if modifierRelevantForAttack(row, "ult") {
+		t.Fatalf("explicit attack_tag should filter non-matching attacks")
+	}
+}
+
+func TestModifierRelevantForAttackAllowsBreakBonusesForSuperBreak(t *testing.T) {
+	row := ModifierRow{StatKey: "break_dmg_bonus"}
+	if !modifierRelevantForAttack(row, "super_break") {
+		t.Fatalf("break damage bonuses should also be relevant for super break estimates")
+	}
+	superOnly := ModifierRow{StatKey: "super_break_dmg_bonus"}
+	if modifierRelevantForAttack(superOnly, "break") {
+		t.Fatalf("super break-only bonuses should not apply to regular break estimates")
+	}
+	baseMultiplier := ModifierRow{StatKey: "super_break_base_multiplier"}
+	if modifierRelevantForAttack(baseMultiplier, "break") {
+		t.Fatalf("super break base multipliers should not apply to regular break estimates")
+	}
+	if !modifierRelevantForAttack(baseMultiplier, "super_break") {
+		t.Fatalf("super break base multipliers should apply to super break estimates")
+	}
+}
+
+func TestModifierOptionsContextFiltering(t *testing.T) {
+	options := NewModifierOptions(false, nil)
+	technique := ModifierRow{SourceKind: "technique", DurationKey: "fixed_turns", StatKey: "def_shred"}
+	if ok, reason := options.ContextAllows(technique); ok || reason != "inactive_context:technique" {
+		t.Fatalf("default context should skip technique, got ok=%v reason=%q", ok, reason)
+	}
+	skillActive := ModifierRow{SourceKind: "skill", DurationKey: "fixed_turns", ConditionText: "持有【狐祈】的我方目标攻击时"}
+	if ok, reason := options.ContextAllows(skillActive); !ok || reason != "" {
+		t.Fatalf("default context should allow skill_active, got ok=%v reason=%q", ok, reason)
+	}
+	onBreak := ModifierRow{SourceKind: "trace", DurationKey: "instant", ConditionText: "敌方目标弱点被击破时触发"}
+	if ok, reason := options.ContextAllows(onBreak); ok || reason != "inactive_context:on_break" {
+		t.Fatalf("default context should skip on_break, got ok=%v reason=%q", ok, reason)
+	}
+	withBreak := NewModifierOptionsWithContexts(false, nil, []string{"on_break"}, nil)
+	if ok, reason := withBreak.ContextAllows(onBreak); !ok || reason != "" {
+		t.Fatalf("active_contexts should enable on_break, got ok=%v reason=%q", ok, reason)
+	}
+	forcedOff := NewModifierOptionsWithContexts(false, nil, nil, []string{"skill_active"})
+	if ok, reason := forcedOff.ContextAllows(skillActive); ok || reason != "inactive_context:skill_active" {
+		t.Fatalf("inactive_contexts should force off skill_active, got ok=%v reason=%q", ok, reason)
+	}
+}
+
+func TestCollectedModifiersDedupesNonStackingEffects(t *testing.T) {
+	skill := fugueDefShredRow(894, "skill", "fixed_turns", "持有【狐祈】的我方目标施放攻击时")
+	technique := fugueDefShredRow(901, "technique", "fixed_turns", "主动攻击晕眩敌人进入战斗后")
+	var collected collectedModifiers
+	collected.addApplied(skill, calcModifierForTest(skill))
+	collected.addApplied(technique, calcModifierForTest(technique))
+	if len(collected.Applied) != 1 || collected.Applied[0].ModifierID != skill.ModifierID {
+		t.Fatalf("expected skill def shred to remain applied, got %#v", collected.Applied)
+	}
+	if len(collected.Skipped) != 1 || collected.Skipped[0].SkipReason != "non_stacking_duplicate_of:894" {
+		t.Fatalf("expected technique duplicate to be skipped, got %#v", collected.Skipped)
+	}
+}
+
+func TestCollectedModifiersReplacesLowerPriorityNonStackingEffect(t *testing.T) {
+	skill := fugueDefShredRow(894, "skill", "fixed_turns", "持有【狐祈】的我方目标施放攻击时")
+	technique := fugueDefShredRow(901, "technique", "fixed_turns", "主动攻击晕眩敌人进入战斗后")
+	var collected collectedModifiers
+	collected.addApplied(technique, calcModifierForTest(technique))
+	collected.addApplied(skill, calcModifierForTest(skill))
+	if len(collected.Applied) != 1 || collected.Applied[0].ModifierID != skill.ModifierID {
+		t.Fatalf("expected skill def shred to replace technique, got %#v", collected.Applied)
+	}
+	if len(collected.Skipped) != 1 || collected.Skipped[0].SkipReason != "non_stacking_replaced_by:894" {
+		t.Fatalf("expected technique to be marked replaced, got %#v", collected.Skipped)
 	}
 }
 
@@ -56,23 +167,59 @@ func TestToBreakCalcModifierRequiresSuperBreakForSuperBonus(t *testing.T) {
 	}
 }
 
-func TestNormalizeSuperBreakBonusValueTreatsConversionAsBaseMultiplier(t *testing.T) {
+func TestToBreakCalcModifierTreatsConversionAsBaseMultiplier(t *testing.T) {
 	row := ModifierRow{
 		StatKey:       "super_break_dmg_bonus",
+		Value:         floatPtr(1.25),
 		ConditionText: "\u8f6c\u5316\u4e3a125%\u7684\u8d85\u51fb\u7834\u4f24\u5bb3",
 	}
-	got := normalizeSuperBreakBonusValue(row, 1.25)
-	if got != 0.25 {
-		t.Fatalf("got %.2f want 0.25", got)
+	got, ok := toBreakCalcModifier(row, true, 1)
+	if !ok {
+		t.Fatalf("conversion modifier should apply to super break")
+	}
+	if got.StatKey != "super_break_base_multiplier" {
+		t.Fatalf("got stat %q want super_break_base_multiplier", got.StatKey)
+	}
+	if got.Value != 1.25 {
+		t.Fatalf("got %.2f want 1.25", got.Value)
 	}
 
 	regularBonus := ModifierRow{
 		StatKey:       "super_break_dmg_bonus",
+		Value:         floatPtr(0.4),
 		ConditionText: "\u8d85\u51fb\u7834\u4f24\u5bb3\u63d0\u9ad840%",
 	}
-	got = normalizeSuperBreakBonusValue(regularBonus, 0.4)
-	if got != 0.4 {
-		t.Fatalf("got %.2f want 0.4", got)
+	got, ok = toBreakCalcModifier(regularBonus, true, 1)
+	if !ok {
+		t.Fatalf("regular super break bonus should apply to super break")
+	}
+	if got.StatKey != "super_break_dmg_bonus" {
+		t.Fatalf("got stat %q want super_break_dmg_bonus", got.StatKey)
+	}
+	if got.Value != 0.4 {
+		t.Fatalf("got %.2f want 0.4", got.Value)
+	}
+}
+
+func TestAppliedBriefUsesConvertedModifierStat(t *testing.T) {
+	row := ModifierRow{
+		ModifierID:    42,
+		StatKey:       "super_break_dmg_bonus",
+		Value:         floatPtr(1.25),
+		ConditionText: "\u8f6c\u5316\u4e3a125%\u7684\u8d85\u51fb\u7834\u4f24\u5bb3",
+	}
+	modifier := calc.Modifier{StatKey: "super_break_base_multiplier", Value: 1.25, AttackTag: "super_break"}
+	var collected collectedModifiers
+	collected.addApplied(row, modifier)
+
+	if len(collected.Applied) != 1 {
+		t.Fatalf("got %d applied modifiers want 1", len(collected.Applied))
+	}
+	if collected.Applied[0].StatKey != "super_break_base_multiplier" {
+		t.Fatalf("got stat %q want super_break_base_multiplier", collected.Applied[0].StatKey)
+	}
+	if collected.Applied[0].Value == nil || *collected.Applied[0].Value != 1.25 {
+		t.Fatalf("applied value was not copied from converted modifier")
 	}
 }
 
@@ -136,4 +283,29 @@ func TestToSustainCalcModifierSkipsShieldFormulaAsStrengthBuff(t *testing.T) {
 
 func floatPtr(value float64) *float64 {
 	return &value
+}
+
+func fugueDefShredRow(id int64, sourceKind string, durationKey string, conditionText string) ModifierRow {
+	return ModifierRow{
+		CharacterID:   1225,
+		SourceKind:    sourceKind,
+		SourceKey:     "test",
+		SourceNameZH:  "测试",
+		ModifierID:    id,
+		TargetScope:   "one_enemy",
+		StatKey:       "def_shred",
+		Value:         floatPtr(0.23),
+		ValueUnit:     "percent",
+		ModifierZone:  "def",
+		AttackTag:     "any",
+		ElementKey:    "any",
+		ConditionText: conditionText,
+		DurationKey:   durationKey,
+		StackRule:     "none",
+		Confidence:    1,
+	}
+}
+
+func calcModifierForTest(row ModifierRow) calc.Modifier {
+	return calc.Modifier{StatKey: row.StatKey, Value: *row.Value, ModifierZone: row.ModifierZone}
 }
