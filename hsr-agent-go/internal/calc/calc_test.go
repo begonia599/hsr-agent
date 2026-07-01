@@ -85,12 +85,27 @@ func TestEstimateBreakDamage(t *testing.T) {
 		BreakEffect:   1,
 		MaxToughness:  90,
 		Resistance:    0.2,
+		EnemyBroken:   true,
 	}, nil)
 
 	want := LevelMultiplier(80) * 2 * 2.75 * 2 * 0.5 * 0.8
 	assertClose(t, got.ElementMultiplier, 2)
 	assertClose(t, got.MaxToughnessMultiplier, 2.75)
+	assertClose(t, got.ToughnessMultiplier, 1)
 	assertClose(t, got.TotalDamage, want)
+}
+
+func TestEstimateBreakDamageUnbroken(t *testing.T) {
+	broken := EstimateBreakDamage(BreakScenario{
+		AttackerLevel: 80, EnemyLevel: 80, ElementKey: "fire", BreakEffect: 1,
+		MaxToughness: 90, Resistance: 0.2, EnemyBroken: true,
+	}, nil)
+	unbroken := EstimateBreakDamage(BreakScenario{
+		AttackerLevel: 80, EnemyLevel: 80, ElementKey: "fire", BreakEffect: 1,
+		MaxToughness: 90, Resistance: 0.2, EnemyBroken: false,
+	}, nil)
+	assertClose(t, unbroken.ToughnessMultiplier, 0.9)
+	assertClose(t, unbroken.TotalDamage, broken.TotalDamage*0.9)
 }
 
 func TestEstimateSuperBreakDamage(t *testing.T) {
@@ -102,6 +117,7 @@ func TestEstimateSuperBreakDamage(t *testing.T) {
 		ToughnessReduction:   20,
 		SuperBreakMultiplier: 1,
 		Resistance:           0.2,
+		EnemyBroken:          true,
 	}, nil)
 
 	want := LevelMultiplier(80) * 2 * 1 * 2 * 1.5 * 0.5 * 0.8
@@ -117,6 +133,7 @@ func TestEstimateSuperBreakDamageBaseMultiplierModifier(t *testing.T) {
 		ToughnessReduction:       20,
 		SuperBreakBaseMultiplier: 1,
 		Resistance:               0.2,
+		EnemyBroken:              true,
 	}
 	baseline := EstimateSuperBreakDamage(scenario, nil)
 	got := EstimateSuperBreakDamage(scenario, []Modifier{

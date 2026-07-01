@@ -138,6 +138,59 @@ func TestResolveSourceStatDependencyUsesPanelOverride(t *testing.T) {
 	}
 }
 
+func TestApplyDamageScenarioUsesManualPanels(t *testing.T) {
+	base := 3000.0
+	critRate := 0.8
+	critDamage := 1.5
+	resistance := 0.1
+	broken := false
+	options := NewModifierOptionsWithScene(false, nil, nil, nil, nil, &AttackerPanel{
+		Level:           70,
+		BaseScalingStat: &base,
+		CritRate:        &critRate,
+		CritDamage:      &critDamage,
+	}, &EnemyState{
+		Level:       90,
+		Resistance:  &resistance,
+		EnemyBroken: &broken,
+	})
+	got := options.ApplyDamageScenario(defaultDamageScenario(&Character{Element: "Fire"}, "skill"))
+	if got.AttackerLevel != 70 || got.EnemyLevel != 90 {
+		t.Fatalf("levels were not applied: %#v", got)
+	}
+	if got.BaseScalingStat != 3000 || got.CritRate != 0.8 || got.CritDamage != 1.5 {
+		t.Fatalf("attacker panel was not applied: %#v", got)
+	}
+	if got.Resistance != 0.1 || got.EnemyBroken {
+		t.Fatalf("enemy state was not applied: %#v", got)
+	}
+}
+
+func TestApplyBreakScenarioUsesManualPanelsAndEnemyState(t *testing.T) {
+	breakEffect := 2.4
+	toughnessReduction := 45.0
+	maxToughness := 120.0
+	resistance := 0.05
+	options := NewModifierOptionsWithScene(false, nil, nil, nil, nil, &AttackerPanel{
+		Level:       75,
+		BreakEffect: &breakEffect,
+		ElementKey:  "Fire",
+	}, &EnemyState{
+		Level:              88,
+		EnemyCount:         3,
+		ToughnessReduction: &toughnessReduction,
+		MaxToughness:       &maxToughness,
+		Resistance:         &resistance,
+	})
+	got := options.ApplyBreakScenario(calc.BreakScenario{ElementKey: "wind", EnemyCount: 1, ToughnessReduction: 30, MaxToughness: 90, Resistance: 0.2})
+	if got.AttackerLevel != 75 || got.EnemyLevel != 88 || got.ElementKey != "fire" || got.EnemyCount != 3 {
+		t.Fatalf("basic break scenario fields were not applied: %#v", got)
+	}
+	if got.BreakEffect != 2.4 || got.ToughnessReduction != 45 || got.MaxToughness != 120 || got.Resistance != 0.05 {
+		t.Fatalf("break panel/enemy values were not applied: %#v", got)
+	}
+}
+
 func TestCollectedModifiersDedupesNonStackingEffects(t *testing.T) {
 	skill := fugueDefShredRow(894, "skill", "fixed_turns", "持有【狐祈】的我方目标施放攻击时")
 	technique := fugueDefShredRow(901, "technique", "fixed_turns", "主动攻击晕眩敌人进入战斗后")

@@ -76,6 +76,34 @@ type SourcePanel struct {
 	BreakEffect *float64 `json:"break_effect,omitempty"`
 }
 
+type AttackerPanel struct {
+	Level             int      `json:"level,omitempty"`
+	BaseScalingStat   *float64 `json:"base_scaling_stat,omitempty"`
+	ScalingStat       *float64 `json:"scaling_stat,omitempty"`
+	AbilityMultiplier *float64 `json:"ability_multiplier,omitempty"`
+	FlatDamage        *float64 `json:"flat_damage,omitempty"`
+	FlatValue         *float64 `json:"flat_value,omitempty"`
+	CritRate          *float64 `json:"crit_rate,omitempty"`
+	CritDamage        *float64 `json:"crit_dmg,omitempty"`
+	BreakEffect       *float64 `json:"break_effect,omitempty"`
+	ElementKey        string   `json:"element,omitempty"`
+}
+
+type EnemyState struct {
+	Level              int      `json:"level,omitempty"`
+	EnemyCount         int      `json:"enemy_count,omitempty"`
+	Resistance         *float64 `json:"resistance,omitempty"`
+	DefReduction       *float64 `json:"def_reduction,omitempty"`
+	DefIgnore          *float64 `json:"def_ignore,omitempty"`
+	ResReduction       *float64 `json:"res_reduction,omitempty"`
+	ResPen             *float64 `json:"res_pen,omitempty"`
+	Vulnerability      *float64 `json:"vulnerability,omitempty"`
+	DamageReduction    *float64 `json:"damage_reduction,omitempty"`
+	EnemyBroken        *bool    `json:"enemy_broken,omitempty"`
+	MaxToughness       *float64 `json:"max_toughness,omitempty"`
+	ToughnessReduction *float64 `json:"toughness_reduction,omitempty"`
+}
+
 type SourceStatDependency struct {
 	Source string  `json:"source"`
 	Stat   string  `json:"stat"`
@@ -163,11 +191,13 @@ type MechanicEstimate struct {
 type ModifierGroups map[string][]ModifierBrief
 
 type ModifierOptions struct {
-	IncludeEidolons    bool          `json:"include_eidolons"`
-	Eidolons           []int         `json:"eidolons,omitempty"`
-	ActiveContexts     []string      `json:"active_contexts,omitempty"`
-	InactiveContexts   []string      `json:"inactive_contexts,omitempty"`
-	SourcePanels       []SourcePanel `json:"source_panels,omitempty"`
+	IncludeEidolons    bool           `json:"include_eidolons"`
+	Eidolons           []int          `json:"eidolons,omitempty"`
+	ActiveContexts     []string       `json:"active_contexts,omitempty"`
+	InactiveContexts   []string       `json:"inactive_contexts,omitempty"`
+	SourcePanels       []SourcePanel  `json:"source_panels,omitempty"`
+	AttackerPanel      *AttackerPanel `json:"attacker_panel,omitempty"`
+	EnemyState         *EnemyState    `json:"enemy_state,omitempty"`
 	eidolonSet         map[string]bool
 	activeContextSet   map[string]bool
 	inactiveContextSet map[string]bool
@@ -210,6 +240,10 @@ func NewModifierOptionsWithContexts(includeEidolons bool, eidolons []int, active
 }
 
 func NewModifierOptionsWithPanels(includeEidolons bool, eidolons []int, activeContexts []string, inactiveContexts []string, sourcePanels []SourcePanel) ModifierOptions {
+	return NewModifierOptionsWithScene(includeEidolons, eidolons, activeContexts, inactiveContexts, sourcePanels, nil, nil)
+}
+
+func NewModifierOptionsWithScene(includeEidolons bool, eidolons []int, activeContexts []string, inactiveContexts []string, sourcePanels []SourcePanel, attackerPanel *AttackerPanel, enemyState *EnemyState) ModifierOptions {
 	options := NewModifierOptionsWithContexts(includeEidolons, eidolons, activeContexts, inactiveContexts)
 	options.SourcePanels = normalizeSourcePanels(sourcePanels)
 	options.sourcePanelByID = make(map[int]SourcePanel, len(options.SourcePanels))
@@ -218,12 +252,14 @@ func NewModifierOptionsWithPanels(includeEidolons bool, eidolons []int, activeCo
 			options.sourcePanelByID[panel.CharacterID] = panel
 		}
 	}
+	options.AttackerPanel = attackerPanel
+	options.EnemyState = enemyState
 	return options
 }
 
 func (options ModifierOptions) Normalized() ModifierOptions {
 	if options.eidolonSet == nil || options.activeContextSet == nil || (len(options.SourcePanels) > 0 && options.sourcePanelByID == nil) {
-		return NewModifierOptionsWithPanels(options.IncludeEidolons, options.Eidolons, options.ActiveContexts, options.InactiveContexts, options.SourcePanels)
+		return NewModifierOptionsWithScene(options.IncludeEidolons, options.Eidolons, options.ActiveContexts, options.InactiveContexts, options.SourcePanels, options.AttackerPanel, options.EnemyState)
 	}
 	return options
 }
@@ -293,6 +329,147 @@ func (options ModifierOptions) ContextAssumptionText() string {
 
 func (options ModifierOptions) SourcePanelAssumptionText() string {
 	return "施放者面板依赖默认按 crit_dmg=100%、break_effect=180% 估算; 可用 source_panels 按角色覆盖。"
+}
+
+func (options ModifierOptions) ManualScenarioAssumptionText() string {
+	return "可用 attacker_panel/support_panels/enemy_state 覆盖默认攻击者面板、施放者面板和敌人状态; 未传字段继续使用工具默认值。"
+}
+
+func (options ModifierOptions) ApplyDamageScenario(scenario calc.Scenario) calc.Scenario {
+	options = options.Normalized()
+	if panel := options.AttackerPanel; panel != nil {
+		if panel.Level > 0 {
+			scenario.AttackerLevel = panel.Level
+		}
+		if panel.BaseScalingStat != nil {
+			scenario.BaseScalingStat = *panel.BaseScalingStat
+			scenario.ScalingStat = 0
+		}
+		if panel.ScalingStat != nil {
+			scenario.BaseScalingStat = 0
+			scenario.ScalingStat = *panel.ScalingStat
+		}
+		if panel.AbilityMultiplier != nil {
+			scenario.AbilityMultiplier = *panel.AbilityMultiplier
+		}
+		if panel.FlatDamage != nil {
+			scenario.FlatDamage = *panel.FlatDamage
+		}
+		if panel.CritRate != nil {
+			scenario.CritRate = *panel.CritRate
+		}
+		if panel.CritDamage != nil {
+			scenario.CritDamage = *panel.CritDamage
+		}
+		if strings.TrimSpace(panel.ElementKey) != "" {
+			scenario.ElementKey = strings.ToLower(strings.TrimSpace(panel.ElementKey))
+		}
+	}
+	if enemy := options.EnemyState; enemy != nil {
+		if enemy.Level > 0 {
+			scenario.EnemyLevel = enemy.Level
+		}
+		if enemy.Resistance != nil {
+			scenario.Resistance = *enemy.Resistance
+		}
+		if enemy.DefReduction != nil {
+			scenario.DefReduction = *enemy.DefReduction
+		}
+		if enemy.DefIgnore != nil {
+			scenario.DefIgnore = *enemy.DefIgnore
+		}
+		if enemy.ResReduction != nil {
+			scenario.ResReduction = *enemy.ResReduction
+		}
+		if enemy.ResPen != nil {
+			scenario.ResPen = *enemy.ResPen
+		}
+		if enemy.Vulnerability != nil {
+			scenario.Vulnerability = *enemy.Vulnerability
+		}
+		if enemy.DamageReduction != nil {
+			scenario.DamageReduction = *enemy.DamageReduction
+		}
+		if enemy.EnemyBroken != nil {
+			scenario.EnemyBroken = *enemy.EnemyBroken
+		}
+	}
+	return scenario
+}
+
+func (options ModifierOptions) ApplyBreakScenario(scenario calc.BreakScenario) calc.BreakScenario {
+	options = options.Normalized()
+	if panel := options.AttackerPanel; panel != nil {
+		if panel.Level > 0 {
+			scenario.AttackerLevel = panel.Level
+		}
+		if panel.BreakEffect != nil {
+			scenario.BreakEffect = *panel.BreakEffect
+		}
+		if strings.TrimSpace(panel.ElementKey) != "" {
+			scenario.ElementKey = strings.ToLower(strings.TrimSpace(panel.ElementKey))
+		}
+	}
+	if enemy := options.EnemyState; enemy != nil {
+		if enemy.Level > 0 {
+			scenario.EnemyLevel = enemy.Level
+		}
+		if enemy.EnemyCount > 0 {
+			scenario.EnemyCount = enemy.EnemyCount
+		}
+		if enemy.Resistance != nil {
+			scenario.Resistance = *enemy.Resistance
+		}
+		if enemy.DefReduction != nil {
+			scenario.DefReduction = *enemy.DefReduction
+		}
+		if enemy.DefIgnore != nil {
+			scenario.DefIgnore = *enemy.DefIgnore
+		}
+		if enemy.ResReduction != nil {
+			scenario.ResReduction = *enemy.ResReduction
+		}
+		if enemy.ResPen != nil {
+			scenario.ResPen = *enemy.ResPen
+		}
+		if enemy.Vulnerability != nil {
+			scenario.Vulnerability = *enemy.Vulnerability
+		}
+		if enemy.DamageReduction != nil {
+			scenario.DamageReduction = *enemy.DamageReduction
+		}
+		if enemy.MaxToughness != nil {
+			scenario.MaxToughness = *enemy.MaxToughness
+		}
+		if enemy.ToughnessReduction != nil {
+			scenario.ToughnessReduction = *enemy.ToughnessReduction
+		}
+		if enemy.EnemyBroken != nil {
+			scenario.EnemyBroken = *enemy.EnemyBroken
+		}
+	}
+	return scenario
+}
+
+func (options ModifierOptions) ApplySustainScenario(scenario calc.SustainScenario) calc.SustainScenario {
+	options = options.Normalized()
+	if panel := options.AttackerPanel; panel != nil {
+		if panel.BaseScalingStat != nil {
+			scenario.BaseScalingStat = *panel.BaseScalingStat
+			scenario.ScalingStat = 0
+		}
+		if panel.ScalingStat != nil {
+			scenario.BaseScalingStat = 0
+			scenario.ScalingStat = *panel.ScalingStat
+		}
+		if panel.AbilityMultiplier != nil {
+			scenario.AbilityMultiplier = *panel.AbilityMultiplier
+		}
+		if panel.FlatValue != nil {
+			scenario.FlatValue = *panel.FlatValue
+		}
+	}
+	return scenario
 }
 
 func normalizeSourcePanels(panels []SourcePanel) []SourcePanel {
@@ -624,6 +801,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 			"默认攻击者/敌人等级均为80,敌人基础抗性20%,敌人已破韧以避免韧性状态干扰对比。",
 			"默认面板: 1000点主缩放属性、100%技能倍率、50%暴击率、100%暴击伤害。",
 			options.SourcePanelAssumptionText(),
+			options.ManualScenarioAssumptionText(),
 			"只计算已能落入常规直伤乘区且有明确数值的 modifiers; 拉条、回能、战技点、治疗、护盾等作为 utility 返回。",
 			options.AssumptionText(),
 		},
@@ -691,6 +869,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 		AttackTag:         strings.TrimSpace(attackTag),
 		ElementKey:        strings.ToLower(attacker.Element),
 	}
+	scenario = options.ApplyDamageScenario(scenario)
 	estimate.Baseline = calc.EstimateStandardDamage(scenario, nil)
 	estimate.WithModifiers = calc.EstimateStandardDamage(scenario, calcModifiers)
 	if estimate.Baseline.TotalDamage > 0 {
@@ -725,7 +904,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 	if err != nil {
 		return nil, err
 	}
-	scenario := defaultDamageScenario(attacker, "dot")
+	scenario := options.ApplyDamageScenario(defaultDamageScenario(attacker, "dot"))
 	baseline := calc.EstimateDotDamage(scenario, nil)
 	withModifiers := calc.EstimateDotDamage(scenario, collected.Modifiers)
 	estimate := newMechanicEstimate("dot_damage", attacker, collected, options)
@@ -737,6 +916,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 	estimate.Assumptions = append(estimate.Assumptions,
 		"DoT 默认不吃暴击,使用 attack_tag=dot 匹配 DoT 增伤、易伤、抗性、减防等 modifier。",
 		"默认场景: 80级、1000主缩放属性、100%倍率、敌人基础抗性20%、敌人已破韧。",
+		options.ManualScenarioAssumptionText(),
 	)
 	setMechanicRatio(estimate, baseline.TotalDamage, withModifiers.TotalDamage)
 	return estimate, nil
@@ -751,7 +931,7 @@ func (s *Service) EstimateBreakDamage(ctx context.Context, attackerID int, suppo
 	if err != nil {
 		return nil, err
 	}
-	scenario = normalizeBreakScenario(attacker, scenario)
+	scenario = options.ApplyBreakScenario(normalizeBreakScenario(attacker, scenario))
 	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "break", options, modifierAffectsDamageSubject, func(row ModifierRow) (calc.Modifier, bool) {
 		return toBreakCalcModifier(row, false, scenario.EnemyCount)
 	})
@@ -787,6 +967,7 @@ func (s *Service) EstimateSuperBreakDamage(ctx context.Context, attackerID int, 
 	if scenario.ToughnessReduction == 0 {
 		scenario.ToughnessReduction = 30
 	}
+	scenario = options.ApplyBreakScenario(scenario)
 	collected, err := s.collectModifiers(ctx, attacker, scenario.ElementKey, defaultSupportIDs(attackerID, supportIDs), "super_break", options, modifierAffectsDamageSubject, func(row ModifierRow) (calc.Modifier, bool) {
 		return toBreakCalcModifier(row, true, scenario.EnemyCount)
 	})
@@ -869,7 +1050,7 @@ ORDER BY ca.kind, ca.stat`, charID)
 		scalingStat = inferScalingStat(axes)
 	}
 	scalingStat = normalizeScalingStat(scalingStat)
-	scenario = normalizeSustainScenario(scenario)
+	scenario = options.ApplySustainScenario(normalizeSustainScenario(scenario))
 	collected, err := s.collectModifiers(ctx, subject, subject.Element, supportIDs, "", options, modifierTargetsAttacker, func(row ModifierRow) (calc.Modifier, bool) {
 		return toSustainCalcModifier(row, scalingStat)
 	})
@@ -885,6 +1066,7 @@ ORDER BY ca.kind, ca.stat`, charID)
 	estimate.Assumptions = append(estimate.Assumptions,
 		"治疗/护盾估算使用显式传入的基础属性、技能倍率和固定值; 目前不导入真实面板、遗器或光锥。",
 		"默认基础属性1000、倍率100%、固定值0; 相关自增益或队友 modifier 会按星魂开关过滤后叠加。",
+		options.ManualScenarioAssumptionText(),
 	)
 	setMechanicRatio(estimate, baseline.TotalValue, withModifiers.TotalValue)
 	return estimate, nil
@@ -986,7 +1168,7 @@ func newMechanicEstimate(mechanic string, subject *Character, collected collecte
 		Skipped:          collected.Skipped,
 		AppliedBySide:    collected.AppliedBySide,
 		SkippedBySide:    collected.SkippedBySide,
-		Assumptions:      []string{options.AssumptionText(), options.ContextAssumptionText(), options.SourcePanelAssumptionText()},
+		Assumptions:      []string{options.AssumptionText(), options.ContextAssumptionText(), options.SourcePanelAssumptionText(), options.ManualScenarioAssumptionText()},
 		Caveats: []string{
 			"这是局部乘区估算,不等于完整行动轴或实战总伤/总奶/总盾。",
 			"reviewed=false 的 modifier 仍可能需要人工复核。",
@@ -1033,6 +1215,9 @@ func normalizeBreakScenario(attacker *Character, scenario calc.BreakScenario) ca
 	if scenario.EnemyCount <= 0 {
 		scenario.EnemyCount = 1
 	}
+	// 默认按"已破"估算(击破窗口内的输出,×1.0);EnemyState 可显式传 enemy_broken=false
+	// 模拟破韧那一发的未破 ×0.9。
+	scenario.EnemyBroken = true
 	return scenario
 }
 

@@ -64,6 +64,7 @@ type BreakScenario struct {
 
 	ElementKey               string
 	EnemyCount               int
+	EnemyBroken              bool
 	BreakEffect              float64
 	BreakDamageBonus         float64
 	SuperBreakBonus          float64
@@ -94,6 +95,7 @@ type BreakBreakdown struct {
 	ResistanceMultiplier     float64         `json:"resistance_multiplier"`
 	VulnerabilityMultiplier  float64         `json:"vulnerability_multiplier"`
 	MitigationMultiplier     float64         `json:"mitigation_multiplier"`
+	ToughnessMultiplier      float64         `json:"toughness_multiplier,omitempty"`
 	TotalDamage              float64         `json:"total_damage"`
 	Utilities                []UtilityEffect `json:"utilities,omitempty"`
 }
@@ -211,6 +213,7 @@ func EstimateBreakDamage(input BreakScenario, modifiers []Modifier) BreakBreakdo
 	resistanceMultiplier := ResistanceMultiplier(scenario.Resistance, scenario.ResReduction, scenario.ResPen)
 	vulnerabilityMultiplier := 1 + scenario.Vulnerability
 	mitigationMultiplier := math.Max(0, 1-scenario.DamageReduction)
+	toughnessMultiplier := ToughnessStateMultiplier(scenario.EnemyBroken)
 
 	total := levelMultiplier *
 		elementMultiplier *
@@ -220,7 +223,8 @@ func EstimateBreakDamage(input BreakScenario, modifiers []Modifier) BreakBreakdo
 		defenseMultiplier *
 		resistanceMultiplier *
 		vulnerabilityMultiplier *
-		mitigationMultiplier
+		mitigationMultiplier *
+		toughnessMultiplier
 
 	return BreakBreakdown{
 		LevelMultiplier:         levelMultiplier,
@@ -232,6 +236,7 @@ func EstimateBreakDamage(input BreakScenario, modifiers []Modifier) BreakBreakdo
 		ResistanceMultiplier:    resistanceMultiplier,
 		VulnerabilityMultiplier: vulnerabilityMultiplier,
 		MitigationMultiplier:    mitigationMultiplier,
+		ToughnessMultiplier:     toughnessMultiplier,
 		TotalDamage:             total,
 		Utilities:               utilities,
 	}
@@ -251,6 +256,7 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 	resistanceMultiplier := ResistanceMultiplier(scenario.Resistance, scenario.ResReduction, scenario.ResPen)
 	vulnerabilityMultiplier := 1 + scenario.Vulnerability
 	mitigationMultiplier := math.Max(0, 1-scenario.DamageReduction)
+	toughnessMultiplier := ToughnessStateMultiplier(scenario.EnemyBroken)
 
 	total := levelMultiplier *
 		toughnessReductionFactor *
@@ -260,7 +266,8 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 		defenseMultiplier *
 		resistanceMultiplier *
 		vulnerabilityMultiplier *
-		mitigationMultiplier
+		mitigationMultiplier *
+		toughnessMultiplier
 
 	return BreakBreakdown{
 		LevelMultiplier:          levelMultiplier,
@@ -273,6 +280,7 @@ func EstimateSuperBreakDamage(input BreakScenario, modifiers []Modifier) BreakBr
 		ResistanceMultiplier:     resistanceMultiplier,
 		VulnerabilityMultiplier:  vulnerabilityMultiplier,
 		MitigationMultiplier:     mitigationMultiplier,
+		ToughnessMultiplier:      toughnessMultiplier,
 		TotalDamage:              total,
 		Utilities:                utilities,
 	}
@@ -348,6 +356,7 @@ func ApplyModifiers(input Scenario, modifiers []Modifier) (Scenario, []UtilityEf
 	scenario := input
 	scalingPct := 0.0
 	scalingFlat := 0.0
+	mitigationSurvive := math.Max(0, 1-scenario.DamageReduction)
 	utilities := []UtilityEffect{}
 
 	for _, modifier := range modifiers {
@@ -363,7 +372,7 @@ func ApplyModifiers(input Scenario, modifiers []Modifier) (Scenario, []UtilityEf
 			scenario.CritRate += modifier.Value
 		case "crit_dmg":
 			scenario.CritDamage += modifier.Value
-		case "dmg_bonus", "element_dmg_bonus", "basic_dmg_bonus", "skill_dmg_bonus", "ult_dmg_bonus", "fua_dmg_bonus", "dot_dmg_bonus", "additional_dmg":
+		case "dmg_bonus", "element_dmg_bonus", "basic_dmg_bonus", "skill_dmg_bonus", "ult_dmg_bonus", "fua_dmg_bonus", "dot_dmg_bonus":
 			scenario.DamageBonus += modifier.Value
 		case "def_ignore":
 			scenario.DefIgnore += modifier.Value
@@ -376,12 +385,14 @@ func ApplyModifiers(input Scenario, modifiers []Modifier) (Scenario, []UtilityEf
 		case "vulnerability":
 			scenario.Vulnerability += modifier.Value
 		case "dmg_reduction":
-			scenario.DamageReduction += modifier.Value
+			// 多个减伤来源连乘 ∏(1-r),而非相加
+			mitigationSurvive *= math.Max(0, 1-modifier.Value)
 		case "action_advance", "action_delay", "sp_recovery", "sp_generation", "sp_consumption", "max_sp", "energy_restore", "energy_regen", "toughness_reduce", "weakness_implant", "weakness_break_efficiency", "cleanse", "revive", "speed_pct", "speed_flat", "break_effect", "effect_res", "healing_received", "outgoing_heal", "shield_strength", "toughness_ignore", "buff_extend", "debuff_extend", "extra_action", "fua_trigger", "dot_trigger", "debuff_apply", "debuff_resist":
 			utilities = append(utilities, UtilityEffect{StatKey: modifier.StatKey, Value: modifier.Value, Condition: modifier.Condition})
 		}
 	}
 
+	scenario.DamageReduction = 1 - mitigationSurvive
 	if scenario.BaseScalingStat > 0 {
 		scenario.ScalingStat = scenario.BaseScalingStat*(1+scalingPct) + scalingFlat
 	} else {
@@ -396,6 +407,9 @@ func ApplyModifiers(input Scenario, modifiers []Modifier) (Scenario, []UtilityEf
 func ApplyBreakModifiers(input BreakScenario, modifiers []Modifier, superBreak bool) (BreakScenario, []UtilityEffect) {
 	scenario := input
 	utilities := []UtilityEffect{}
+	mitigationSurvive := math.Max(0, 1-scenario.DamageReduction)
+	toughnessAdditive := 0.0
+	efficiencyProduct := 1.0
 	for _, modifier := range modifiers {
 		if !breakModifierApplies(scenario, modifier, superBreak) {
 			continue
@@ -415,9 +429,9 @@ func ApplyBreakModifiers(input BreakScenario, modifiers []Modifier, superBreak b
 				scenario.SuperBreakMultiplier = scenario.SuperBreakBaseMultiplier
 			}
 		case "weakness_break_efficiency":
-			scenario.ToughnessReduction *= 1 + modifier.Value
+			efficiencyProduct *= 1 + modifier.Value
 		case "toughness_reduce":
-			scenario.ToughnessReduction += modifier.Value
+			toughnessAdditive += modifier.Value
 		case "def_ignore":
 			scenario.DefIgnore += modifier.Value
 		case "def_shred":
@@ -429,11 +443,14 @@ func ApplyBreakModifiers(input BreakScenario, modifiers []Modifier, superBreak b
 		case "vulnerability":
 			scenario.Vulnerability += modifier.Value
 		case "dmg_reduction":
-			scenario.DamageReduction += modifier.Value
+			mitigationSurvive *= math.Max(0, 1-modifier.Value)
 		case "action_advance", "action_delay", "sp_recovery", "sp_generation", "sp_consumption", "max_sp", "energy_restore", "energy_regen", "weakness_implant", "toughness_ignore", "buff_extend", "extra_action":
 			utilities = append(utilities, UtilityEffect{StatKey: modifier.StatKey, Value: modifier.Value, Condition: modifier.Condition})
 		}
 	}
+	// 先累加削韧、再统一乘击破效率,消除 modifier 遍历顺序依赖
+	scenario.ToughnessReduction = (scenario.ToughnessReduction + toughnessAdditive) * efficiencyProduct
+	scenario.DamageReduction = 1 - mitigationSurvive
 	return scenario, utilities
 }
 
@@ -495,6 +512,9 @@ func CritMultiplier(rate float64, damage float64) float64 {
 	if rate > 1 {
 		rate = 1
 	}
+	if damage < 0 {
+		damage = 0
+	}
 	return 1 + rate*damage
 }
 
@@ -512,6 +532,13 @@ func DefenseMultiplier(attackerLevel int, enemyLevel int, defReduction float64, 
 
 func ResistanceMultiplier(resistance float64, resReduction float64, resPen float64) float64 {
 	effective := resistance - resReduction - resPen
+	// 有效抗性夹在 [-100%, +90%](对应抗性乘区 [0.10, 2.00]),与官方一致。
+	if effective > 0.9 {
+		effective = 0.9
+	}
+	if effective < -1.0 {
+		effective = -1.0
+	}
 	return 1 - effective
 }
 
@@ -572,8 +599,12 @@ var levelMultipliers = []float64{
 }
 
 func modifierApplies(scenario Scenario, modifier Modifier) bool {
-	if modifier.AttackTag != "" && modifier.AttackTag != "any" && scenario.AttackTag != "" && modifier.AttackTag != scenario.AttackTag {
-		return false
+	// 攻击类型专属增伤:场景未指定 attack_tag 时,不放行任何带具体 tag 的专属增伤
+	// (否则 basic/skill/ult 专属加成会一起叠加,系统性高估);通用(空/any)始终放行。
+	if modifier.AttackTag != "" && modifier.AttackTag != "any" {
+		if scenario.AttackTag == "" || modifier.AttackTag != scenario.AttackTag {
+			return false
+		}
 	}
 	if modifier.ElementKey != "" && modifier.ElementKey != "any" && scenario.ElementKey != "" && modifier.ElementKey != scenario.ElementKey {
 		return false
