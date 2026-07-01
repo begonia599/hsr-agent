@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"math"
 	"testing"
 
 	"hsr-agent-go/internal/calc"
@@ -102,6 +103,38 @@ func TestModifierOptionsContextFiltering(t *testing.T) {
 	forcedOff := NewModifierOptionsWithContexts(false, nil, nil, []string{"skill_active"})
 	if ok, reason := forcedOff.ContextAllows(skillActive); ok || reason != "inactive_context:skill_active" {
 		t.Fatalf("inactive_contexts should force off skill_active, got ok=%v reason=%q", ok, reason)
+	}
+}
+
+func TestResolveSourceStatDependencyUsesDefaultPanel(t *testing.T) {
+	row := ModifierRow{
+		CharacterID:          8005,
+		StatKey:              "break_effect",
+		SourceStatDependency: []byte(`{"source":"caster","stat":"break_effect","ratio":0.15,"flat":0}`),
+	}
+	resolved, ok := NewModifierOptions(false, nil).ResolveSourceStatDependency(row)
+	if !ok {
+		t.Fatalf("source stat dependency should resolve")
+	}
+	if resolved.Value == nil || math.Abs(*resolved.Value-0.27) > 1e-9 {
+		t.Fatalf("got %v want 0.27 from default 180%% break effect", resolved.Value)
+	}
+}
+
+func TestResolveSourceStatDependencyUsesPanelOverride(t *testing.T) {
+	critDamage := 2.0
+	row := ModifierRow{
+		CharacterID:          1306,
+		StatKey:              "crit_dmg",
+		SourceStatDependency: []byte(`{"source":"caster","stat":"crit_dmg","ratio":0.3,"flat":0.54}`),
+	}
+	options := NewModifierOptionsWithPanels(false, nil, nil, nil, []SourcePanel{{CharacterID: 1306, CritDamage: &critDamage}})
+	resolved, ok := options.ResolveSourceStatDependency(row)
+	if !ok {
+		t.Fatalf("source stat dependency should resolve")
+	}
+	if resolved.Value == nil || math.Abs(*resolved.Value-1.14) > 1e-9 {
+		t.Fatalf("got %v want 1.14 from 200%% crit damage", resolved.Value)
 	}
 }
 

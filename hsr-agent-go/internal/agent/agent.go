@@ -378,6 +378,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":     sourcePanelsSchema(),
 		}, []string{"attacker_id", "support_id"})),
 		tool("estimate_damage_gain", "Estimate local standard-damage multiplier from support modifiers under a default scenario.", object(map[string]any{
 			"attacker_id":       integerSchema("attacker/core character id"),
@@ -387,6 +388,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":     sourcePanelsSchema(),
 		}, []string{"attacker_id", "support_ids"})),
 		tool("estimate_dot_damage", "Estimate local DoT damage multiplier; DoT ignores crit by default.", object(map[string]any{
 			"attacker_id":       integerSchema("attacker/core character id"),
@@ -395,6 +397,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":     sourcePanelsSchema(),
 		}, []string{"attacker_id"})),
 		tool("estimate_break_damage", "Estimate local break damage with explicit break scenario inputs.", object(map[string]any{
 			"attacker_id":       integerSchema("attacker/core character id"),
@@ -415,6 +418,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":          arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":   arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts": arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":     sourcePanelsSchema(),
 		}, []string{"attacker_id"})),
 		tool("estimate_super_break_damage", "Estimate local super break damage with explicit toughness reduction inputs.", object(map[string]any{
 			"attacker_id":                 integerSchema("attacker/core character id"),
@@ -438,6 +442,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":                    arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":             arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts":           arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":               sourcePanelsSchema(),
 		}, []string{"attacker_id"})),
 		tool("estimate_healing", "Estimate local healing value from scaling stat, ability multiplier, flat heal, and modifiers.", object(map[string]any{
 			"char_id":            integerSchema("healer character id"),
@@ -450,6 +455,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":           arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":    arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts":  arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":      sourcePanelsSchema(),
 		}, []string{"char_id"})),
 		tool("estimate_shield", "Estimate local shield value from scaling stat, ability multiplier, flat shield, and modifiers.", object(map[string]any{
 			"char_id":            integerSchema("shielder character id"),
@@ -462,6 +468,7 @@ func toolDefinitions() []toolDef {
 			"eidolons":           arraySchema(integerSchema("enabled eidolons, e.g. [1,2,6]; default empty/E0")),
 			"active_contexts":    arraySchema(stringSchema("extra active contexts, e.g. technique, on_break, combat_start")),
 			"inactive_contexts":  arraySchema(stringSchema("contexts to force off, e.g. ult_active, skill_active")),
+			"source_panels":      sourcePanelsSchema(),
 		}, []string{"char_id"})),
 		tool("estimate_uptime", "Estimate simple duration/cycle uptime ratio.", object(map[string]any{
 			"duration_turns":    floatSchema("active duration in turns"),
@@ -498,6 +505,17 @@ func booleanSchema(description string) map[string]any {
 
 func arraySchema(items map[string]any) map[string]any {
 	return map[string]any{"type": "array", "items": items}
+}
+
+func sourcePanelsSchema() map[string]any {
+	return arraySchema(object(map[string]any{
+		"character_id": integerSchema("caster/support character id"),
+		"crit_dmg":     floatSchema("caster crit damage decimal, e.g. 2.0 for 200%"),
+		"break_effect": floatSchema("caster break effect decimal, e.g. 2.5 for 250%"),
+		"atk":          floatSchema("caster attack value"),
+		"hp":           floatSchema("caster hp value"),
+		"def":          floatSchema("caster defense value"),
+	}, []string{"character_id"}))
 }
 
 func (r *Runner) dispatchTool(ctx context.Context, name string, rawArgs string) (any, error) {
@@ -794,12 +812,47 @@ func floatArgDefault(args map[string]any, key string, fallback float64) float64 
 }
 
 func modifierOptionsArg(args map[string]any) apptools.ModifierOptions {
-	return apptools.NewModifierOptionsWithContexts(
+	return apptools.NewModifierOptionsWithPanels(
 		boolArgDefault(args, "include_eidolons", false),
 		intSliceArg(args, "eidolons"),
 		strSliceArg(args, "active_contexts"),
 		strSliceArg(args, "inactive_contexts"),
+		sourcePanelsArg(args, "source_panels"),
 	)
+}
+
+func sourcePanelsArg(args map[string]any, key string) []apptools.SourcePanel {
+	values, ok := args[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]apptools.SourcePanel, 0, len(values))
+	for _, value := range values {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		panel := apptools.SourcePanel{CharacterID: intArg(row, "character_id")}
+		panel.Atk = optionalFloatArg(row, "atk")
+		panel.HP = optionalFloatArg(row, "hp")
+		panel.Def = optionalFloatArg(row, "def")
+		panel.CritDamage = optionalFloatArg(row, "crit_dmg")
+		panel.BreakEffect = optionalFloatArg(row, "break_effect")
+		out = append(out, panel)
+	}
+	return out
+}
+
+func optionalFloatArg(args map[string]any, key string) *float64 {
+	switch value := args[key].(type) {
+	case float64:
+		return &value
+	case int:
+		out := float64(value)
+		return &out
+	default:
+		return nil
+	}
 }
 
 func strSliceArg(args map[string]any, key string) []string {

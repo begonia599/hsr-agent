@@ -1160,7 +1160,7 @@ CREATE TABLE character_modifiers (
 
 - [x] 明确 modifier 作用侧:`ally_buff` / `enemy_debuff` / `field_effect` / `utility`。
 - [x] 让 `one_enemy/all_enemies` 的减防、减抗、易伤进入伤害公式。
-- [ ] 增加 `source_stat_dependency` 表达方式,支持"等同于施放者击破特攻的 15%"。
+- [x] 增加 `source_stat_dependency` 表达方式,支持"等同于施放者击破特攻的 15%"。
 - [ ] 增加手动场景输入:`attacker_panel`、`support_panels`、`enemy_state`。
 - [ ] 统一条件解析:`enemy_count`、阈值、叠层、持续回合、攻击标签、目标元素。
 - [x] 增加场景激活/来源互斥:`technique`、`skill_active`、`ult_active`、`combat_start`、`on_break` 等效果不能默认同时全开。
@@ -1179,7 +1179,7 @@ CREATE TABLE character_modifiers (
 - [x] `estimate_super_break_damage` 可以显式列出 ally buffs 与 enemy debuffs 分别进入了哪些乘区。
 - [x] 忘归人 23% 减防能进入流萤超击破估算,并在结果中解释为敌方 debuff。
 - [x] 忘归人的秘技减防与战技狐祈减防不会在默认场景里重复叠加;需要由场景参数显式开启对应来源。
-- [ ] 同谐主 E4 不再固定写死 15%,而是可由开拓者面板输入或默认面板推导。
+- [x] 同谐主 E4 不再固定写死 15%,而是可由开拓者面板输入或默认面板推导。
 - [ ] 高风险角色的关键 modifier 至少有人工 reviewed 标记或测试 fixture 覆盖。
 
 ### M8.8 — 公式与倍率对齐:成熟机制先补齐(1-3 天)
@@ -1201,7 +1201,7 @@ CREATE TABLE character_modifiers (
 - [ ] 对齐击破公式:等级倍率、元素倍率、韧性上限、击破特攻、击破伤害、减防/抗性/易伤/减伤。
 - [ ] 对齐超击破公式:削韧值、弱点击破效率、削韧提高、超击破基础倍率、击破/超击破增伤、减防/抗性/易伤。
 - [x] 把 `super_break_dmg_bonus` 中"转化为 N% 超击破"升级成明确字段,如 `super_break_base_multiplier`。
-- [ ] 补 `source_stat_dependency`:支持同谐主 E4、花火暴伤等"按施放者面板转化"效果。
+- [x] 补 `source_stat_dependency`:支持同谐主 E4、花火暴伤等"按施放者面板转化"效果。
 - [ ] 增加手动面板输入:`attacker_panel`、`support_panels`、`enemy_state`,优先服务 M8 公式工具,不是行动轴模拟。
 - [ ] 建立高风险 fixture:流萤、忘归人、同谐开拓者、阮梅、银狼、灵砂、加拉赫。
 
@@ -1215,7 +1215,7 @@ CREATE TABLE character_modifiers (
 
 - [ ] Fandom Damage 中成熟乘区在我们的 `calc` 字段里都有明确映射或明确 `unsupported` 记录。
 - [x] `estimate_super_break_damage` 不再依赖临时的 125% -> +25% 兼容逻辑,而是使用明确基础倍率字段。
-- [ ] 同谐主 E4 可以用默认/手动开拓者面板推导,不再写死 15%。
+- [x] 同谐主 E4 可以用默认/手动开拓者面板推导,不再写死 15%。
 - [ ] 至少 5 个高风险 fixture 的关键乘区输出稳定,`go test ./...` 覆盖。
 
 ### M9 — 队伍/行动轴模拟 v1(4-7 天)

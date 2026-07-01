@@ -305,6 +305,7 @@ M7.6 起,Agent 问答会写入会话、消息和 tool trace。落库失败不会
 - 默认启用 `passive`、`field_active`、`skill_active`、`ult_active`、`conditional`、`on_attack`;默认不启用秘技、开局、击破后、波次开始和一次性瞬发效果。
 - 结果会返回 `active_contexts`、`inactive_contexts`、`applied_by_side`、`skipped_by_side`;被场景过滤或 non-stacking 去重的 modifier 会在 `skipped_modifiers[].skip_reason` 标注原因。
 - `super_break_base_multiplier`:超击破基础倍率推荐字段;`super_break_multiplier` 保留为旧别名;`super_break_dmg_bonus` 只表示超击破增伤区。
+- `source_panels`:可选施放者面板覆盖,用于解析 `source_stat_dependency`。格式如 `[{"character_id":8005,"break_effect":2.4},{"character_id":1306,"crit_dmg":2.0}]`;不传时默认 `crit_dmg=1.0`、`break_effect=1.8`。
 
 `POST /api/mechanics/compare-character-fit`
 
@@ -328,6 +329,7 @@ M7.6 起,Agent 问答会写入会话、消息和 tool trace。落库失败不会
   "break_effect": 2.5,
   "toughness_reduction": 30,
   "super_break_base_multiplier": 1,
+  "source_panels": [{"character_id": 8005, "break_effect": 2.4}],
   "active_contexts": ["technique"],
   "include_eidolons": true,
   "eidolons": [6]

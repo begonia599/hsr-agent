@@ -21,48 +21,66 @@ type CharacterRef struct {
 }
 
 type ModifierRow struct {
-	CharacterID     int             `json:"character_id"`
-	CharacterNameZH string          `json:"character_name_zh,omitempty"`
-	SourceID        int64           `json:"source_id"`
-	SourceKind      string          `json:"source_kind"`
-	SourceKey       string          `json:"source_key"`
-	SourceNameZH    string          `json:"source_name_zh"`
-	ModifierID      int64           `json:"modifier_id"`
-	TargetScope     string          `json:"target_scope"`
-	StatKey         string          `json:"stat_key"`
-	Value           *float64        `json:"value,omitempty"`
-	ValueUnit       string          `json:"value_unit"`
-	ModifierZone    string          `json:"modifier_zone"`
-	AttackTag       string          `json:"attack_tag,omitempty"`
-	ElementKey      string          `json:"element_key,omitempty"`
-	TargetPath      string          `json:"target_path,omitempty"`
-	ConditionText   string          `json:"condition_text,omitempty"`
-	ConditionJSON   json.RawMessage `json:"condition_jsonb,omitempty"`
-	DurationKey     string          `json:"duration_key,omitempty"`
-	StackRule       string          `json:"stack_rule,omitempty"`
-	EffectSide      string          `json:"effect_side,omitempty"`
-	Confidence      float64         `json:"confidence"`
-	Reviewed        bool            `json:"reviewed"`
+	CharacterID          int             `json:"character_id"`
+	CharacterNameZH      string          `json:"character_name_zh,omitempty"`
+	SourceID             int64           `json:"source_id"`
+	SourceKind           string          `json:"source_kind"`
+	SourceKey            string          `json:"source_key"`
+	SourceNameZH         string          `json:"source_name_zh"`
+	ModifierID           int64           `json:"modifier_id"`
+	TargetScope          string          `json:"target_scope"`
+	StatKey              string          `json:"stat_key"`
+	Value                *float64        `json:"value,omitempty"`
+	ValueUnit            string          `json:"value_unit"`
+	ModifierZone         string          `json:"modifier_zone"`
+	AttackTag            string          `json:"attack_tag,omitempty"`
+	ElementKey           string          `json:"element_key,omitempty"`
+	TargetPath           string          `json:"target_path,omitempty"`
+	ConditionText        string          `json:"condition_text,omitempty"`
+	ConditionJSON        json.RawMessage `json:"condition_jsonb,omitempty"`
+	SourceStatDependency json.RawMessage `json:"source_stat_dependency,omitempty"`
+	DurationKey          string          `json:"duration_key,omitempty"`
+	StackRule            string          `json:"stack_rule,omitempty"`
+	EffectSide           string          `json:"effect_side,omitempty"`
+	Confidence           float64         `json:"confidence"`
+	Reviewed             bool            `json:"reviewed"`
 }
 
 type ModifierBrief struct {
-	ModifierID    int64    `json:"modifier_id"`
-	SourceKind    string   `json:"source_kind,omitempty"`
-	SourceKey     string   `json:"source_key,omitempty"`
-	SourceNameZH  string   `json:"source_name_zh,omitempty"`
-	StatKey       string   `json:"stat_key"`
-	Value         *float64 `json:"value,omitempty"`
-	ValueUnit     string   `json:"value_unit"`
-	ModifierZone  string   `json:"modifier_zone"`
-	TargetScope   string   `json:"target_scope"`
-	EffectSide    string   `json:"effect_side,omitempty"`
-	ActiveContext string   `json:"active_context,omitempty"`
-	SkipReason    string   `json:"skip_reason,omitempty"`
-	AttackTag     string   `json:"attack_tag,omitempty"`
-	ElementKey    string   `json:"element_key,omitempty"`
-	ConditionText string   `json:"condition_text,omitempty"`
-	Reviewed      bool     `json:"reviewed"`
-	Confidence    float64  `json:"confidence"`
+	ModifierID           int64           `json:"modifier_id"`
+	SourceKind           string          `json:"source_kind,omitempty"`
+	SourceKey            string          `json:"source_key,omitempty"`
+	SourceNameZH         string          `json:"source_name_zh,omitempty"`
+	StatKey              string          `json:"stat_key"`
+	Value                *float64        `json:"value,omitempty"`
+	ValueUnit            string          `json:"value_unit"`
+	ModifierZone         string          `json:"modifier_zone"`
+	TargetScope          string          `json:"target_scope"`
+	EffectSide           string          `json:"effect_side,omitempty"`
+	ActiveContext        string          `json:"active_context,omitempty"`
+	SkipReason           string          `json:"skip_reason,omitempty"`
+	AttackTag            string          `json:"attack_tag,omitempty"`
+	ElementKey           string          `json:"element_key,omitempty"`
+	ConditionText        string          `json:"condition_text,omitempty"`
+	SourceStatDependency json.RawMessage `json:"source_stat_dependency,omitempty"`
+	Reviewed             bool            `json:"reviewed"`
+	Confidence           float64         `json:"confidence"`
+}
+
+type SourcePanel struct {
+	CharacterID int      `json:"character_id,omitempty"`
+	Atk         *float64 `json:"atk,omitempty"`
+	HP          *float64 `json:"hp,omitempty"`
+	Def         *float64 `json:"def,omitempty"`
+	CritDamage  *float64 `json:"crit_dmg,omitempty"`
+	BreakEffect *float64 `json:"break_effect,omitempty"`
+}
+
+type SourceStatDependency struct {
+	Source string  `json:"source"`
+	Stat   string  `json:"stat"`
+	Ratio  float64 `json:"ratio"`
+	Flat   float64 `json:"flat,omitempty"`
 }
 
 type EffectSourceExplanation struct {
@@ -145,13 +163,15 @@ type MechanicEstimate struct {
 type ModifierGroups map[string][]ModifierBrief
 
 type ModifierOptions struct {
-	IncludeEidolons    bool     `json:"include_eidolons"`
-	Eidolons           []int    `json:"eidolons,omitempty"`
-	ActiveContexts     []string `json:"active_contexts,omitempty"`
-	InactiveContexts   []string `json:"inactive_contexts,omitempty"`
+	IncludeEidolons    bool          `json:"include_eidolons"`
+	Eidolons           []int         `json:"eidolons,omitempty"`
+	ActiveContexts     []string      `json:"active_contexts,omitempty"`
+	InactiveContexts   []string      `json:"inactive_contexts,omitempty"`
+	SourcePanels       []SourcePanel `json:"source_panels,omitempty"`
 	eidolonSet         map[string]bool
 	activeContextSet   map[string]bool
 	inactiveContextSet map[string]bool
+	sourcePanelByID    map[int]SourcePanel
 }
 
 func NewModifierOptions(includeEidolons bool, eidolons []int) ModifierOptions {
@@ -189,9 +209,21 @@ func NewModifierOptionsWithContexts(includeEidolons bool, eidolons []int, active
 	return options
 }
 
+func NewModifierOptionsWithPanels(includeEidolons bool, eidolons []int, activeContexts []string, inactiveContexts []string, sourcePanels []SourcePanel) ModifierOptions {
+	options := NewModifierOptionsWithContexts(includeEidolons, eidolons, activeContexts, inactiveContexts)
+	options.SourcePanels = normalizeSourcePanels(sourcePanels)
+	options.sourcePanelByID = make(map[int]SourcePanel, len(options.SourcePanels))
+	for _, panel := range options.SourcePanels {
+		if panel.CharacterID > 0 {
+			options.sourcePanelByID[panel.CharacterID] = panel
+		}
+	}
+	return options
+}
+
 func (options ModifierOptions) Normalized() ModifierOptions {
-	if options.eidolonSet == nil || options.activeContextSet == nil {
-		return NewModifierOptionsWithContexts(options.IncludeEidolons, options.Eidolons, options.ActiveContexts, options.InactiveContexts)
+	if options.eidolonSet == nil || options.activeContextSet == nil || (len(options.SourcePanels) > 0 && options.sourcePanelByID == nil) {
+		return NewModifierOptionsWithPanels(options.IncludeEidolons, options.Eidolons, options.ActiveContexts, options.InactiveContexts, options.SourcePanels)
 	}
 	return options
 }
@@ -259,6 +291,134 @@ func (options ModifierOptions) ContextAssumptionText() string {
 	return "默认机制场景启用常驻、战技/终结技持续类效果; technique/combat_start/on_break 等触发场景需要 active_contexts 显式开启,也可用 inactive_contexts 排除。"
 }
 
+func (options ModifierOptions) SourcePanelAssumptionText() string {
+	return "施放者面板依赖默认按 crit_dmg=100%、break_effect=180% 估算; 可用 source_panels 按角色覆盖。"
+}
+
+func normalizeSourcePanels(panels []SourcePanel) []SourcePanel {
+	out := make([]SourcePanel, 0, len(panels))
+	seen := map[int]bool{}
+	for _, panel := range panels {
+		if panel.CharacterID <= 0 || seen[panel.CharacterID] {
+			continue
+		}
+		seen[panel.CharacterID] = true
+		out = append(out, panel)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CharacterID < out[j].CharacterID })
+	return out
+}
+
+func (options ModifierOptions) ResolveSourceStatDependency(row ModifierRow) (ModifierRow, bool) {
+	dependency, ok := parseSourceStatDependency(row.SourceStatDependency)
+	if !ok {
+		return row, false
+	}
+	statValue, ok := options.sourceStatValue(row.CharacterID, dependency.Stat)
+	if !ok {
+		return row, false
+	}
+	value := statValue*dependency.Ratio + dependency.Flat
+	row.Value = &value
+	return row, true
+}
+
+func parseSourceStatDependency(raw json.RawMessage) (SourceStatDependency, bool) {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return SourceStatDependency{}, false
+	}
+	var dependency SourceStatDependency
+	if err := json.Unmarshal(raw, &dependency); err != nil {
+		return SourceStatDependency{}, false
+	}
+	dependency.Source = strings.ToLower(strings.TrimSpace(dependency.Source))
+	dependency.Stat = normalizeSourcePanelStat(dependency.Stat)
+	if dependency.Source != "caster" || dependency.Stat == "" {
+		return SourceStatDependency{}, false
+	}
+	return dependency, true
+}
+
+func (options ModifierOptions) sourceStatValue(characterID int, stat string) (float64, bool) {
+	options = options.Normalized()
+	panel := defaultSourcePanel()
+	if override, ok := options.sourcePanelByID[characterID]; ok {
+		panel = mergeSourcePanel(panel, override)
+	}
+	switch normalizeSourcePanelStat(stat) {
+	case "atk":
+		return derefFloat(panel.Atk, 1000), true
+	case "hp":
+		return derefFloat(panel.HP, 3000), true
+	case "def":
+		return derefFloat(panel.Def, 1000), true
+	case "crit_dmg":
+		return derefFloat(panel.CritDamage, 1.0), true
+	case "break_effect":
+		return derefFloat(panel.BreakEffect, 1.8), true
+	default:
+		return 0, false
+	}
+}
+
+func defaultSourcePanel() SourcePanel {
+	return SourcePanel{
+		Atk:         floatPtrValue(1000),
+		HP:          floatPtrValue(3000),
+		Def:         floatPtrValue(1000),
+		CritDamage:  floatPtrValue(1.0),
+		BreakEffect: floatPtrValue(1.8),
+	}
+}
+
+func mergeSourcePanel(base SourcePanel, override SourcePanel) SourcePanel {
+	base.CharacterID = override.CharacterID
+	if override.Atk != nil {
+		base.Atk = override.Atk
+	}
+	if override.HP != nil {
+		base.HP = override.HP
+	}
+	if override.Def != nil {
+		base.Def = override.Def
+	}
+	if override.CritDamage != nil {
+		base.CritDamage = override.CritDamage
+	}
+	if override.BreakEffect != nil {
+		base.BreakEffect = override.BreakEffect
+	}
+	return base
+}
+
+func normalizeSourcePanelStat(stat string) string {
+	switch strings.ToLower(strings.TrimSpace(stat)) {
+	case "atk", "attack":
+		return "atk"
+	case "hp":
+		return "hp"
+	case "def", "defense":
+		return "def"
+	case "crit_dmg", "crit_damage", "critical_damage":
+		return "crit_dmg"
+	case "break_effect", "break_eff":
+		return "break_effect"
+	default:
+		return ""
+	}
+}
+
+func derefFloat(value *float64, fallback float64) float64 {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func floatPtrValue(value float64) *float64 {
+	return &value
+}
+
 func (s *Service) ListCharacterModifiers(ctx context.Context, charID int, statKey string, targetScope string, limit int) ([]ModifierRow, error) {
 	if charID == 0 {
 		return nil, fmt.Errorf("char_id is required")
@@ -270,7 +430,7 @@ func (s *Service) ListCharacterModifiers(ctx context.Context, charID int, statKe
 SELECT character_id, character_name_zh, source_id, source_kind, source_key, source_name_zh,
        modifier_id, target_scope, stat_key, value::float8, value_unit, modifier_zone,
        coalesce(attack_tag, ''), coalesce(element_key, ''), coalesce(target_path, ''),
-       coalesce(condition_text, ''), condition_jsonb, coalesce(duration_key, ''),
+       coalesce(condition_text, ''), condition_jsonb, source_stat_dependency, coalesce(duration_key, ''),
        coalesce(stack_rule, ''), confidence::float8, reviewed
 FROM v_character_modifiers
 WHERE character_id = $1
@@ -384,6 +544,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 			"评分是启发式: 基于已抽取 modifiers、受控词表和默认权重,不是完整行动轴模拟。",
 			"reviewed=false 的抽取结果可用作低置信依据,高风险结论仍需人工复核。",
 			options.AssumptionText(),
+			options.SourcePanelAssumptionText(),
 		},
 	}
 
@@ -401,6 +562,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 		if ok, _ := options.ContextAllows(modifier); !ok {
 			continue
 		}
+		modifier, _ = options.ResolveSourceStatDependency(modifier)
 		fit := scoreModifierFit(modifier, needSet, tags)
 		if fit.Score >= 5 {
 			result.UsefulEffects = append(result.UsefulEffects, fit)
@@ -461,12 +623,12 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 		Assumptions: []string{
 			"默认攻击者/敌人等级均为80,敌人基础抗性20%,敌人已破韧以避免韧性状态干扰对比。",
 			"默认面板: 1000点主缩放属性、100%技能倍率、50%暴击率、100%暴击伤害。",
+			options.SourcePanelAssumptionText(),
 			"只计算已能落入常规直伤乘区且有明确数值的 modifiers; 拉条、回能、战技点、治疗、护盾等作为 utility 返回。",
 			options.AssumptionText(),
 		},
 		Caveats: []string{
 			"不模拟行动轴、覆盖率、星魂开关、遗器、光锥、敌人机制和队伍循环。",
-			"基于施放者自身属性换算的加成若缺少施放者面板,不会被强行折算进伤害。",
 		},
 	}
 	estimate.Assumptions = append(estimate.Assumptions, options.ContextAssumptionText())
@@ -494,6 +656,7 @@ ORDER BY ca.kind, ca.stat`, attackerID)
 				}
 				continue
 			}
+			row, _ = options.ResolveSourceStatDependency(row)
 			modifier, ok := toCalcModifier(row, scalingStat, attackTag)
 			if !ok {
 				if isPotentiallyUseful(row) {
@@ -764,6 +927,7 @@ func (s *Service) collectModifiers(
 				}
 				continue
 			}
+			row, _ = options.ResolveSourceStatDependency(row)
 			modifier, ok := convert(row)
 			if !ok {
 				if isPotentiallyUseful(row) {
@@ -822,7 +986,7 @@ func newMechanicEstimate(mechanic string, subject *Character, collected collecte
 		Skipped:          collected.Skipped,
 		AppliedBySide:    collected.AppliedBySide,
 		SkippedBySide:    collected.SkippedBySide,
-		Assumptions:      []string{options.AssumptionText(), options.ContextAssumptionText()},
+		Assumptions:      []string{options.AssumptionText(), options.ContextAssumptionText(), options.SourcePanelAssumptionText()},
 		Caveats: []string{
 			"这是局部乘区估算,不等于完整行动轴或实战总伤/总奶/总盾。",
 			"reviewed=false 的 modifier 仍可能需要人工复核。",
@@ -914,17 +1078,19 @@ type scanner func(dest ...any) error
 func scanModifier(scan scanner) (ModifierRow, error) {
 	var item ModifierRow
 	var conditionJSON []byte
+	var sourceStatDependency []byte
 	err := scan(
 		&item.CharacterID, &item.CharacterNameZH, &item.SourceID, &item.SourceKind,
 		&item.SourceKey, &item.SourceNameZH, &item.ModifierID, &item.TargetScope,
 		&item.StatKey, &item.Value, &item.ValueUnit, &item.ModifierZone,
 		&item.AttackTag, &item.ElementKey, &item.TargetPath, &item.ConditionText,
-		&conditionJSON, &item.DurationKey, &item.StackRule, &item.Confidence, &item.Reviewed,
+		&conditionJSON, &sourceStatDependency, &item.DurationKey, &item.StackRule, &item.Confidence, &item.Reviewed,
 	)
 	if err != nil {
 		return item, err
 	}
 	item.ConditionJSON = json.RawMessage(conditionJSON)
+	item.SourceStatDependency = json.RawMessage(sourceStatDependency)
 	item.EffectSide = inferEffectSide(item)
 	return item, nil
 }
@@ -935,22 +1101,23 @@ func modifierBrief(row ModifierRow) ModifierBrief {
 		effectSide = inferEffectSide(row)
 	}
 	return ModifierBrief{
-		ModifierID:    row.ModifierID,
-		SourceKind:    row.SourceKind,
-		SourceKey:     row.SourceKey,
-		SourceNameZH:  row.SourceNameZH,
-		StatKey:       row.StatKey,
-		Value:         row.Value,
-		ValueUnit:     row.ValueUnit,
-		ModifierZone:  row.ModifierZone,
-		TargetScope:   row.TargetScope,
-		EffectSide:    effectSide,
-		ActiveContext: inferActiveContext(row),
-		AttackTag:     row.AttackTag,
-		ElementKey:    row.ElementKey,
-		ConditionText: truncateText(row.ConditionText, 120),
-		Reviewed:      row.Reviewed,
-		Confidence:    row.Confidence,
+		ModifierID:           row.ModifierID,
+		SourceKind:           row.SourceKind,
+		SourceKey:            row.SourceKey,
+		SourceNameZH:         row.SourceNameZH,
+		StatKey:              row.StatKey,
+		Value:                row.Value,
+		ValueUnit:            row.ValueUnit,
+		ModifierZone:         row.ModifierZone,
+		TargetScope:          row.TargetScope,
+		EffectSide:           effectSide,
+		ActiveContext:        inferActiveContext(row),
+		AttackTag:            row.AttackTag,
+		ElementKey:           row.ElementKey,
+		ConditionText:        truncateText(row.ConditionText, 120),
+		SourceStatDependency: row.SourceStatDependency,
+		Reviewed:             row.Reviewed,
+		Confidence:           row.Confidence,
 	}
 }
 

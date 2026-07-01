@@ -195,6 +195,17 @@ MODIFIER_ITEM_SCHEMA: dict[str, Any] = {
         "target_path": {"type": "string", "enum": PATH_KEYS},
         "condition_text": {"type": "string"},
         "condition_jsonb": {"type": "object"},
+        "source_stat_dependency": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "source": {"type": "string", "enum": ["caster"]},
+                "stat": {"type": "string", "enum": ["atk", "hp", "def", "crit_dmg", "break_effect"]},
+                "ratio": {"type": "number"},
+                "flat": {"type": "number"},
+            },
+            "required": ["source", "stat", "ratio"],
+        },
         "duration_key": {"type": "string", "enum": DURATION_KEYS},
         "stack_rule": {"type": "string", "enum": STACK_RULES},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
@@ -255,6 +266,7 @@ def vocab_prompt() -> str:
             f"target_path: {', '.join(PATH_KEYS)}",
             f"duration_key: {', '.join(DURATION_KEYS)}",
             f"stack_rule: {', '.join(STACK_RULES)}",
+            "source_stat_dependency: optional object for caster-stat scaling, e.g. {'source':'caster','stat':'crit_dmg','ratio':0.3,'flat':0.54}",
         ]
     )
 
@@ -299,6 +311,8 @@ def normalize_modifier(item: dict[str, Any], valid_sources: set[tuple[str, str]]
     except (TypeError, ValueError):
         confidence = 0.0
 
+    source_stat_dependency = normalize_source_stat_dependency(item.get("source_stat_dependency"))
+
     return {
         "source_kind": source_kind,
         "source_key": source_key,
@@ -312,10 +326,29 @@ def normalize_modifier(item: dict[str, Any], valid_sources: set[tuple[str, str]]
         "target_path": _clean_optional_enum(item.get("target_path"), set(PATH_KEYS)),
         "condition_text": str(item.get("condition_text") or "").strip(),
         "condition_jsonb": condition_jsonb,
+        "source_stat_dependency": source_stat_dependency,
         "duration_key": _clean_optional_enum(item.get("duration_key"), set(DURATION_KEYS)),
         "stack_rule": _clean_optional_enum(item.get("stack_rule"), set(STACK_RULES)),
         "confidence": confidence,
     }
+
+
+def normalize_source_stat_dependency(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    source = value.get("source")
+    stat = value.get("stat")
+    if source != "caster" or stat not in {"atk", "hp", "def", "crit_dmg", "break_effect"}:
+        return {}
+    try:
+        ratio = float(value.get("ratio"))
+    except (TypeError, ValueError):
+        return {}
+    try:
+        flat = float(value.get("flat", 0))
+    except (TypeError, ValueError):
+        flat = 0.0
+    return {"source": source, "stat": stat, "ratio": ratio, "flat": flat}
 
 
 def normalize_modifier_payload(payload: dict[str, Any], valid_sources: set[tuple[str, str]]) -> dict[str, Any]:

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ func main() {
 	eidolonsCSV := flag.String("eidolons", "", "comma-separated enabled eidolons, e.g. 1,2,6")
 	activeContextsCSV := flag.String("active-contexts", "", "comma-separated extra active mechanic contexts, e.g. technique,on_break,combat_start")
 	inactiveContextsCSV := flag.String("inactive-contexts", "", "comma-separated mechanic contexts to force off, e.g. ult_active,skill_active")
+	sourcePanelsCSV := flag.String("source-panels", "", "semicolon-separated source panels, e.g. 8005:break_effect=2.4;1306:crit_dmg=2.0")
 	scalingStat := flag.String("scaling-stat", "", "scaling stat for sustain tools: atk, hp, def")
 	baseScalingStat := flag.Float64("base-scaling-stat", 1000, "base scaling stat for local mechanic estimates")
 	abilityMultiplier := flag.Float64("ability-multiplier", 1, "ability multiplier, e.g. 2.4 for 240%")
@@ -121,7 +123,7 @@ func main() {
 		defer cancel()
 
 		service := tools.NewWithModels(pool, defaultEmbeddingID, embedders, defaultRerankID, rerankers, cfg.RerankTopN)
-		result, err := runTool(ctx, service, *toolName, *query, *charID, *axis, *target, *role, *element, *path, *rarity, *limit, *entityKind, *entityID, *variantCSV, *excludeCSV, *supportID, *supportIDsCSV, *attackTag, *includeEidolons, *eidolonsCSV, *activeContextsCSV, *inactiveContextsCSV, *scalingStat, *baseScalingStat, *abilityMultiplier, *flatValue, *breakEffect, *breakDamageBonus, *superBreakBonus, *toughnessReduction, *maxToughness, *enemyCount, *superBreakBaseMultiplier, *superBreakMultiplier, *enemyResistance, *defReduction, *defIgnore, *resReduction, *resPen, *vulnerability, *damageReduction, *durationTurns, *cooldownTurns, *cycleTurns, *startDelayTurns)
+		result, err := runTool(ctx, service, *toolName, *query, *charID, *axis, *target, *role, *element, *path, *rarity, *limit, *entityKind, *entityID, *variantCSV, *excludeCSV, *supportID, *supportIDsCSV, *attackTag, *includeEidolons, *eidolonsCSV, *activeContextsCSV, *inactiveContextsCSV, *sourcePanelsCSV, *scalingStat, *baseScalingStat, *abilityMultiplier, *flatValue, *breakEffect, *breakDamageBonus, *superBreakBonus, *toughnessReduction, *maxToughness, *enemyCount, *superBreakBaseMultiplier, *superBreakMultiplier, *enemyResistance, *defReduction, *defIgnore, *resReduction, *resPen, *vulnerability, *damageReduction, *durationTurns, *cooldownTurns, *cycleTurns, *startDelayTurns)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -266,6 +268,7 @@ func runTool(
 	eidolonsCSV string,
 	activeContextsCSV string,
 	inactiveContextsCSV string,
+	sourcePanelsCSV string,
 	scalingStat string,
 	baseScalingStat float64,
 	abilityMultiplier float64,
@@ -294,7 +297,11 @@ func runTool(
 	if err != nil {
 		return nil, err
 	}
-	modifierOptions := tools.NewModifierOptionsWithContexts(includeEidolons, eidolons, parseCSVStrings(activeContextsCSV), parseCSVStrings(inactiveContextsCSV))
+	sourcePanels, err := parseSourcePanels(sourcePanelsCSV)
+	if err != nil {
+		return nil, err
+	}
+	modifierOptions := tools.NewModifierOptionsWithPanels(includeEidolons, eidolons, parseCSVStrings(activeContextsCSV), parseCSVStrings(inactiveContextsCSV), sourcePanels)
 
 	switch toolName {
 	case "get_character":
@@ -527,6 +534,59 @@ func parseCSVStrings(csv string) []string {
 		}
 	}
 	return out
+}
+
+func parseSourcePanels(csv string) ([]tools.SourcePanel, error) {
+	if strings.TrimSpace(csv) == "" {
+		return nil, nil
+	}
+	var out []tools.SourcePanel
+	for _, rawPanel := range strings.Split(csv, ";") {
+		rawPanel = strings.TrimSpace(rawPanel)
+		if rawPanel == "" {
+			continue
+		}
+		parts := strings.SplitN(rawPanel, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid source panel %q, want character_id:stat=value", rawPanel)
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid source panel character id %q", parts[0])
+		}
+		panel := tools.SourcePanel{CharacterID: id}
+		for _, rawKV := range strings.Split(parts[1], ",") {
+			rawKV = strings.TrimSpace(rawKV)
+			if rawKV == "" {
+				continue
+			}
+			kv := strings.SplitN(rawKV, "=", 2)
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("invalid source panel stat %q, want stat=value", rawKV)
+			}
+			stat := strings.ToLower(strings.TrimSpace(kv[0]))
+			value, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid source panel value %q: %w", kv[1], err)
+			}
+			switch stat {
+			case "atk":
+				panel.Atk = &value
+			case "hp":
+				panel.HP = &value
+			case "def":
+				panel.Def = &value
+			case "crit_dmg", "crit_damage":
+				panel.CritDamage = &value
+			case "break_effect", "break_eff":
+				panel.BreakEffect = &value
+			default:
+				return nil, fmt.Errorf("unknown source panel stat %q", stat)
+			}
+		}
+		out = append(out, panel)
+	}
+	return out, nil
 }
 
 func parseSupportIDs(csv string, single int) ([]int, error) {

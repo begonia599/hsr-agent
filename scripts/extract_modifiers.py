@@ -54,6 +54,7 @@ SYSTEM_PROMPT = """你是崩坏星穹铁道机制抽取员。
 6. DoT、击破、超击破默认不吃暴击;不要把它们标成 crit 区。
 7. 复杂条件写 condition_text,机器可读条件写 condition_jsonb。
 8. 如果某条来源只有技能等级提升或没有明确机制,直接跳过。没有可抽取内容时返回 modifiers=[]。
+9. 若效果数值依赖施放者面板,不要把比例当成最终加成;填写 source_stat_dependency。例如"等同于花火30%暴击伤害+54%"写 value=null,stat_key=crit_dmg,source_stat_dependency={"source":"caster","stat":"crit_dmg","ratio":0.3,"flat":0.54};"等同于开拓者15%的击破特攻"写 source_stat_dependency={"source":"caster","stat":"break_effect","ratio":0.15,"flat":0}。
 """
 
 SKILL_TYPE_KIND = {
@@ -551,8 +552,8 @@ def insert_modifiers(cur: psycopg.Cursor, source_ids: dict[tuple[str, str], int]
             INSERT INTO character_modifiers
                 (source_id, target_scope, stat_key, value, value_unit, modifier_zone,
                  attack_tag, element_key, target_path, condition_text, condition_jsonb,
-                 duration_key, stack_rule, confidence, reviewed)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false)
+                 source_stat_dependency, duration_key, stack_rule, confidence, reviewed)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false)
             """,
             (
                 source_id,
@@ -566,6 +567,7 @@ def insert_modifiers(cur: psycopg.Cursor, source_ids: dict[tuple[str, str], int]
                 mod["target_path"],
                 mod["condition_text"],
                 Jsonb(mod["condition_jsonb"]),
+                Jsonb(mod["source_stat_dependency"]),
                 mod["duration_key"],
                 mod["stack_rule"],
                 mod["confidence"],
